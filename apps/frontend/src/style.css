@@ -388,7 +388,7 @@ main {
   margin-top: 21px;
 }
 .comparison-row .eyebrow {
-  font-size: 8px;
+  font-size: 10px;
   margin-bottom: 6px;
 }
 .comparison-row select {
@@ -402,7 +402,7 @@ main {
 .match small {
   display: block;
   color: #a0ada5;
-  font-size: 9px;
+  font-size: 10px;
   margin-top: 4px;
 }
 .selection-inputs {
@@ -507,7 +507,7 @@ aside {
   font-size: 13px;
 }
 .stage-heading p {
-  font-size: 9px;
+  font-size: 10px;
   color: #a8b4ad;
   margin-top: 3px;
 }
@@ -569,8 +569,8 @@ aside {
   width: 10px;
   height: 10px;
 }
-.parameter [data-orientation="horizontal"] {
-  height: 4px;
+.parameter > [data-orientation="horizontal"] {
+  min-height: 20px;
 }
 .gain-controls {
   display: grid;
@@ -828,7 +828,7 @@ button[disabled] {
 }
 .audition-band small {
   color: #a8b4ad;
-  font-size: 9px;
+  font-size: 10px;
 }
 .quality-controls {
   padding: 0 0 16px;
@@ -848,7 +848,7 @@ button[disabled] {
   font-size: 10px;
 }
 .quality-controls p {
-  font-size: 9px;
+  font-size: 10px;
   color: #a8b4ad;
 }
 .assistant textarea {
@@ -872,4 +872,42 @@ button[disabled] {
 }
 .proposal strong {
   color: #e9efec;
+}
+
+/* Keep transport/device/status controls in reach while panels scroll independently. */
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.app-header,
+footer,
+.status {
+  flex-shrink: 0;
+}
+.workspace {
+  flex: 1;
+  min-height: 0;
+}
+main,
+aside {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+button:active {
+  filter: brightness(1.15);
+}
+@media (max-width: 820px) {
+  .app {
+    height: auto;
+    overflow: visible;
+  }
+  .workspace {
+    display: block;
+  }
+  main,
+  aside {
+    overflow: visible;
+  }
 }

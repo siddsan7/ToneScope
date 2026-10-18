@@ -125,6 +125,11 @@ export default function App() {
   }, []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && ["o", "s"].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+        void send(e.key.toLowerCase() === "o" ? "import" : "save");
+        return;
+      }
       if (
         (e.target as HTMLElement).closest(
           'input,textarea,select,[role="slider"],[role="switch"],button',
@@ -134,14 +139,6 @@ export default function App() {
       if (e.code === "Space") {
         e.preventDefault();
         void send("play");
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "o") {
-        e.preventDefault();
-        void send("import");
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-        e.preventDefault();
-        void send("save");
       }
       if (e.key === "Escape") void send("pause");
     };
@@ -377,9 +374,15 @@ export default function App() {
               <div className="scope-heading frequency-heading">
                 <div>
                   <Activity size={17} />
-                  <h3>Frequency response</h3>
+                  <h3>
+                    {analysis === "spectrum"
+                      ? "Frequency spectrum"
+                      : "RMS envelope"}
+                  </h3>
                   <span className="scope-note">
-                    Selected passage · stereo energy
+                    {analysis === "spectrum"
+                      ? "Selected passage · stereo energy"
+                      : "Full source · 10 ms detector"}
                   </span>
                 </div>
                 <select
@@ -566,9 +569,9 @@ export default function App() {
                         send("quality", { value: Number(e.target.value) })
                       }
                     >
-                      <option value={1}>1� native</option>
-                      <option value={2}>2� oversampled</option>
-                      <option value={4}>4� oversampled</option>
+                      <option value={1}>1x native</option>
+                      <option value={2}>2x oversampled</option>
+                      <option value={4}>4x oversampled</option>
                     </select>
                   </label>
                   <label className="inline">
@@ -669,7 +672,7 @@ export default function App() {
                       </label>
                       <textarea
                         id="assistant-prompt"
-                        placeholder="Keep the pick attack, soften the upper mids�"
+                        placeholder="Keep the pick attack, soften the upper mids..."
                         value={prompt}
                         maxLength={2000}
                         onChange={(e) => setPrompt(e.target.value)}
