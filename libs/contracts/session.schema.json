@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tonescope:session:1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "parameters"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "source": {
+      "type": "string",
+      "maxLength": 32768
+    },
+    "source_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "selection_start": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "selection_end": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "audition": {
+          "enum": [
+            "dry",
+            "wet",
+            "residual"
+          ]
+        },
+        "rms_match": {
+          "type": "boolean"
+        }
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "inputDb": {
+          "type": "number",
+          "minimum": -24,
+          "maximum": 24,
+          "default": 0
+        },
+        "thresholdDb": {
+          "type": "number",
+          "minimum": -60,
+          "maximum": 0,
+          "default": -18
+        },
+        "ratio": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 4
+        },
+        "attackMs": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 100,
+          "default": 10
+        },
+        "releaseMs": {
+          "type": "number",
+          "minimum": 10,
+          "maximum": 2000,
+          "default": 150
+        },
+        "kneeDb": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 24,
+          "default": 6
+        },
+        "makeupDb": {
+          "type": "number",
+          "minimum": -24,
+          "maximum": 24,
+          "default": 0
+        },
+        "lowDb": {
+          "type": "number",
+          "minimum": -18,
+          "maximum": 18,
+          "default": 0
+        },
+        "midDb": {
+          "type": "number",
+          "minimum": -18,
+          "maximum": 18,
+          "default": 0
+        },
+        "highDb": {
+          "type": "number",
+          "minimum": -18,
+          "maximum": 18,
+          "default": 0
+        },
+        "midHz": {
+          "type": "number",
+          "minimum": 20,
+          "maximum": 20000,
+          "default": 1000
+        },
+        "midQ": {
+          "type": "number",
+          "minimum": 0.2,
+          "maximum": 10,
+          "default": 0.707
+        },
+        "driveDb": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 36,
+          "default": 6
+        },
+        "toneHz": {
+          "type": "number",
+          "minimum": 20,
+          "maximum": 20000,
+          "default": 5000
+        },
+        "outputDb": {
+          "type": "number",
+          "minimum": -24,
+          "maximum": 24,
+          "default": 0
+        },
+        "compressor": {
+          "type": "boolean",
+          "default": false
+        },
+        "equalizer": {
+          "type": "boolean",
+          "default": false
+        },
+        "drive": {
+          "type": "boolean",
+          "default": false
+        },
+        "order": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          }
+        }
+      }
+    }
+  }
+}

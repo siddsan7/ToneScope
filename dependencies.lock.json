@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "cmake": {
+    "version": "3.31.6"
+  },
+  "compiler": {
+    "family": "MSVC",
+    "version": "19.44.35223",
+    "generator": "Visual Studio 17 2022",
+    "architecture": "x64",
+    "toolset_directory": "14.44.35207"
+  },
+  "juce": {
+    "version": "9.0.4",
+    "commit": "3fb5cbc0340758596dac39f7c8de47d562b4896e",
+    "license": "AGPL-3.0-or-commercial",
+    "distribution_route": "unselected; release blocked"
+  },
+  "faust": {
+    "version": "2.88.0",
+    "windows_installer_sha256": "cc898c55526f8f52859c0c5e47995a5fa2cd6f82bf57cfdeaabfa7d149885656",
+    "url": "https://github.com/grame-cncm/faust/releases/download/2.88.0/Faust-2.88.0-win64.exe"
+  }
+}
