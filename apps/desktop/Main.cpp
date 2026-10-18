@@ -1,4 +1,9 @@
 #include <juce_audio_utils/juce_audio_utils.h>
+#if TONESCOPE_WEB_FRONTEND
+#include <juce_gui_extra/juce_gui_extra.h>
+#include <ToneScopeWeb.h>
+#include "WebFrontend.h"
+#endif
 
 #include <juce_dsp/juce_dsp.h>
 
@@ -42,6 +47,7 @@ struct Rendered {
 
     std::vector<double> drySpectrum, wetSpectrum;
 
+    std::vector<tonescope::DynamicsFrame> dryDynamics, wetDynamics;
     int latency = 0; std::uint64_t ingressClamps = 0;
 
 };
@@ -186,7 +192,7 @@ class Main final : public juce::Component, private juce::AudioIODeviceCallback, 
 
 public:
 
-    explicit Main(bool openAudio = true) {
+    explicit Main(bool openAudio = true, bool useWeb = true) {
 
         setName("ToneScope audio microscope"); setWantsKeyboardFocus(true);
 
@@ -251,6 +257,8 @@ public:
         addControl("Tone",20,20000,5000," Hz",&tonescope::Parameters::toneHz);
 
         addControl("Output",-24,24,0," dB",&tonescope::Parameters::outputDb);
+        addControl("Low crossover",40,1000,200," Hz",&tonescope::Parameters::crossoverLowHz);
+        addControl("High crossover",500,10000,2000," Hz",&tonescope::Parameters::crossoverHighHz);
 
         seek.setRange(0,1,0.00001);seek.setSliderStyle(juce::Slider::LinearHorizontal);seek.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);seek.setTitle("Playback position");seek.onValueChange=[this]{if(rendered)position=(int64_t)(seek.getValue()*rendered->dry->frames());};addAndMakeVisible(seek);
 
@@ -268,7 +276,12 @@ public:
 
         if(openAudio){auto error=devices.initialise(0,2,nullptr,true);if(error.isNotEmpty())setStatus("Audio output unavailable: "+error);}
 
-        devices.addAudioCallback(this);startTimerHz(20);setSize(1280,880);
+        devices.addAudioCallback(this);startTimerHz(20);setSize(1280,980);
+#if TONESCOPE_WEB_FRONTEND
+        if(useWeb)initialiseWebFrontend();
+#else
+        juce::ignoreUnused(useWeb);
+#endif
 
     }
 
@@ -292,6 +305,9 @@ public:
 
     void resized() override {
 
+        #if TONESCOPE_WEB_FRONTEND
+        if(browser){browser->setBounds(getLocalBounds());return;}
+#endif
         int w=getWidth(),h=getHeight();auto top=juce::Rectangle<int>(270,22,w-294,34);
 
         for(auto* b:{&importButton,&loadButton,&saveButton,&exportButton})b->setBounds(top.removeFromLeft(juce::jmin(145,top.getWidth()/ (b==&exportButton?1:2))).reduced(3,0));
@@ -361,6 +377,7 @@ private:
     juce::ComboBox mode,order;juce::Slider seek;juce::TextEditor selectionFrom,selectionTo;
 
     juce::Label status,metrics;Microscope scope;
+    int oversampling=1;bool multiband=false;int auditionBand=0;
 
     std::shared_ptr<const tonescope::AudioData> source;
 
@@ -382,19 +399,20 @@ private:
 
     static_assert(std::atomic<int64_t>::is_always_lock_free && std::atomic<float>::is_always_lock_free && std::atomic<double>::is_always_lock_free);
 
+    #include "WebFrontend.inc"
     void setStatus(const juce::String& s){status.setText(s,juce::dontSendNotification);}
 
     void addControl(const juce::String& name,double a,double b,double v,const juce::String& unit,float tonescope::Parameters::*member) {
 
-        static constexpr const char* keys[]{"inputDb","thresholdDb","ratio","attackMs","releaseMs","kneeDb","makeupDb","lowDb","midDb","midHz","midQ","highDb","driveDb","toneHz","outputDb"};
+        static constexpr const char* keys[]{"inputDb","thresholdDb","ratio","attackMs","releaseMs","kneeDb","makeupDb","lowDb","midDb","midHz","midQ","highDb","driveDb","toneHz","outputDb","crossoverLowHz","crossoverHighHz"};
 
-        auto c=std::make_unique<Control>();c->key=keys[controls.size()];c->member=member;c->label.setText(name,juce::dontSendNotification);c->label.setFont(juce::FontOptions(13.0f));c->slider.setRange(a,b,0.01);c->slider.setValue(v);c->slider.setTextValueSuffix(unit);c->slider.setSliderStyle(juce::Slider::LinearHorizontal);c->slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,90,24);c->slider.setTitle(name);c->slider.setWantsKeyboardFocus(true);c->slider.onValueChange=[this]{parametersChanged();};addAndMakeVisible(c->label);addAndMakeVisible(c->slider);controls.push_back(std::move(c));
+        auto c=std::make_unique<Control>();c->key=keys[controls.size()];c->member=member;c->label.setText(name,juce::dontSendNotification);c->label.setFont(juce::FontOptions(13.0f));c->slider.setRange(a,b,0.01);c->slider.setValue(v);c->slider.setTextValueSuffix(unit);c->slider.setSliderStyle(juce::Slider::LinearHorizontal);c->slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,90,24);c->slider.setTitle(name);c->slider.setWantsKeyboardFocus(true);c->slider.onValueChange=[this,key=c->key]{parametersChanged(key=="crossoverLowHz"||key=="crossoverHighHz");};addAndMakeVisible(c->label);addAndMakeVisible(c->slider);controls.push_back(std::move(c));
 
     }
 
     tonescope::Parameters parameters() const {
 
-        tonescope::Parameters p;for(auto& c:controls)p.*(c->member)=(float)c->slider.getValue();p.compressor=stages[0].getToggleState();p.equalizer=stages[1].getToggleState();p.drive=stages[2].getToggleState();
+        tonescope::Parameters p;for(auto& c:controls)p.*(c->member)=(float)c->slider.getValue();p.compressor=stages[0].getToggleState();p.equalizer=stages[1].getToggleState();p.drive=stages[2].getToggleState();p.oversampling=oversampling;p.multiband=multiband;
 
         constexpr std::array<std::array<int,3>,6> orders{{{0,1,2},{2,1,0},{1,0,2},{0,2,1},{1,2,0},{2,0,1}}};p.order=orders[(size_t)juce::jlimit(0,5,order.getSelectedId()-1)];return p;
 
@@ -406,6 +424,7 @@ private:
 
         auto p=parameters();std::string error;if(!tonescope::validate(p,monitoring?deviceRate.load():(source?source->sampleRate:48000),error)){playing=false;++revision;busy=false;setStatus(error);return;}
 
+        if(topology){detach();liveEngine.setParameters(p);commandRead.store(commandWrite.load());attach();}
         auto w=commandWrite.load();if(w-commandRead.load(std::memory_order_acquire)<commands.size()){commands[w%commands.size()]=p;commandWrite.store(w+1,std::memory_order_release);}else setStatus("Control queue full; pause adjustment and retry.");
 
         if(source&&!monitoring){playing=false;busy=true;renderDue=juce::Time::currentTimeMillis()+180;++revision;setStatus("Settings changed | updating comparison...");}
@@ -438,7 +457,7 @@ private:
 
     void togglePlay(){if(rendered&&renderedRevision==revision&&!busy&&!monitoring){if(position>=selectionEnd)position=selectionStart.load();playing=!playing.load();}}
 
-    void audioDeviceAboutToStart(juce::AudioIODevice* d) override {deviceRate=d->getCurrentSampleRate();deviceBlock=d->getCurrentBufferSizeSamples();liveEngine.prepare(deviceRate>=44100&&deviceRate<=96000?deviceRate.load():48000,2);if(rendered)sourceStep=rendered->dry->sampleRate/deviceRate;}
+    void audioDeviceAboutToStart(juce::AudioIODevice* d) override {deviceRate=d->getCurrentSampleRate();deviceBlock=d->getCurrentBufferSizeSamples();liveEngine.prepare(deviceRate>=44100&&deviceRate<=96000?deviceRate.load():48000,2);liveEngine.setParameters(parameters());if(rendered)sourceStep=rendered->dry->sampleRate/deviceRate;}
 
     void audioDeviceStopped() override {playing=false;monitoring=false;recording=false;}
 
@@ -476,7 +495,7 @@ private:
 
             for(int i=0;i<frames;++i){if(pos>=end){if(looping.load())pos=(double)start;else{playing=false;break;}}auto at=juce::jlimit<int64_t>(0,a->dry->frames()-1,(int64_t)pos);auto next=juce::jmin(at+1,a->dry->frames()-1);float t=(float)(pos-std::floor(pos));
 
-                for(int c=0;c<no;++c)if(outs[c]){auto channel=(size_t)juce::jmin(c,(int)a->dry->samples.size()-1);auto sample=[&](const tonescope::AudioData& audio){return audio.samples[channel][(size_t)at]*(1-t)+audio.samples[channel][(size_t)next]*t;};float dry=sample(*a->dry),wet=sample(*a->wet);float v=choice==1?dry:choice==2?(float)(wet*gain):choice==3?wet-dry:(float)(wet*gain)-dry;
+                for(int c=0;c<no;++c)if(outs[c]){auto channel=(size_t)juce::jmin(c,(int)a->dry->samples.size()-1);auto sample=[&](const tonescope::AudioData& audio,int offset){return audio.samples[channel][(size_t)(at+offset)]*(1-t)+audio.samples[channel][(size_t)juce::jmin<int64_t>(next+offset,audio.frames()-1)]*t;};float dry=sample(*a->dry,0),wet=sample(*a->wet,a->latency);float v=choice==1?dry:choice==2?(float)(wet*gain):choice==3?wet-dry:(float)(wet*gain)-dry;
 
                     // A short boundary envelope belongs only to monitor playback, never measurements.
 
@@ -524,11 +543,11 @@ private:
 
         if(!source||monitoring)return;playing=false;busy=true;const auto token=++revision;StaleJobs stale;pool.removeAllJobs(false,0,&stale);auto input=source;auto p=parameters();auto a=(int64_t)(scope.first*input->frames()),b=(int64_t)(scope.last*input->frames());b=juce::jlimit<int64_t>(a+1,input->frames(),b);bool rms=match.getToggleState()||mode.getSelectedId()==4;
 
-        auto previous=rendered;auto key=juce::JSON::toString(session()["parameters"],true);
+        auto previous=rendered;auto key=juce::JSON::toString(session()["parameters"],true)+"|band="+juce::String(auditionBand);auto band=auditionBand;
 
         auto safe=juce::Component::SafePointer<Main>(this);setStatus("Rendering full source history and selected-passage measurements...");
 
-        pool.addJob(new Job([safe,token,input,p,a,b,rms,previous,key]{try{
+        pool.addJob(new Job([safe,token,input,p,a,b,rms,previous,key,band]{try{
 
             auto result=std::make_shared<Rendered>();result->raw=input;result->graphKey=key;
 
@@ -538,19 +557,24 @@ private:
 
                 result->wet=std::make_shared<tonescope::AudioData>(tonescope::render(*input,p));
 
-                auto reference=std::make_shared<tonescope::AudioData>(*input);auto trim=std::pow(10.0,p.inputDb/20.0);for(auto& channel:reference->samples)for(auto& value:channel){if(std::abs(value)>16.0f)++result->ingressClamps;value=(float)(juce::jlimit(-16.0f,16.0f,value)*trim);}result->dry=reference;
+                auto reference=std::make_shared<tonescope::AudioData>(*input);auto trim=std::pow(10.0,p.inputDb/20.0);for(auto& channel:reference->samples)for(auto& value:channel){if(std::abs(value)>16.0f)++result->ingressClamps;value=(float)(juce::jlimit(-16.0f,16.0f,value)*trim);}result->dry=p.multiband&&p.compressor?std::make_shared<tonescope::AudioData>(tonescope::crossoverReference(*input,p)):reference;
+                if(band!=0){auto pair=tonescope::auditionPair(*result->dry,*result->wet,(tonescope::AuditionBand)band,p.crossoverLowHz,p.crossoverHighHz);result->dry=std::make_shared<tonescope::AudioData>(std::move(pair.dry));result->wet=std::make_shared<tonescope::AudioData>(std::move(pair.wet));}
 
                 auto peaks=[](const tonescope::AudioData& data){std::vector<float> values(2048,0);for(int64_t i=0;i<data.frames();++i){auto bin=(size_t)(i*2048/data.frames());for(auto& channel:data.samples)values[bin]=juce::jmax(values[bin],std::abs(channel[(size_t)i]));}return values;};result->dryPeaks=peaks(*result->dry);result->wetPeaks=peaks(*result->wet);
 
             }
 
-            result->comparison=tonescope::compare(*result->dry,*result->wet,a,b,rms);
+            tonescope::Engine descriptor;descriptor.prepare(input->sampleRate,(int)input->samples.size());descriptor.setParameters(p);result->latency=descriptor.latencySamples();
+            const auto measuredEnd=juce::jmin<int64_t>(b,input->frames()-result->latency);
+            if(a>=measuredEnd)throw std::runtime_error("Selection falls inside the unavailable latency tail. Extend the passage.");
+            result->comparison=tonescope::compareAligned(*result->dry,*result->wet,a,measuredEnd,rms,result->latency);
+            result->dryDynamics=tonescope::dynamics(*result->dry);result->wetDynamics=tonescope::dynamics(*result->wet);
 
-            auto fft=[&](const tonescope::AudioData& data){tonescope::AudioData window;window.sampleRate=data.sampleRate;window.samples.assign(data.samples.size(),std::vector<float>(2048,0));for(size_t c=0;c<data.samples.size();++c)for(int64_t i=0;i<juce::jmin<int64_t>(2048,b-a);++i)window.samples[c][(size_t)i]=data.samples[c][(size_t)(a+i)];return tonescope::spectrum(window,0);};result->drySpectrum=fft(*result->dry);result->wetSpectrum=fft(*result->wet);tonescope::Engine e;e.prepare(input->sampleRate,(int)input->samples.size());result->latency=e.latencySamples();
+            auto fft=[&](const tonescope::AudioData& data,int offset){tonescope::AudioData window;window.sampleRate=data.sampleRate;window.samples.assign(data.samples.size(),std::vector<float>(2048,0));for(size_t c=0;c<data.samples.size();++c)for(int64_t i=0;i<juce::jmin<int64_t>(2048,measuredEnd-a);++i)window.samples[c][(size_t)i]=data.samples[c][(size_t)(a+i+offset)];return tonescope::spectrum(window,0);};result->drySpectrum=fft(*result->dry,0);result->wetSpectrum=fft(*result->wet,result->latency);
 
-            juce::MessageManager::callAsync([safe,token,result,a,b]{if(!safe||safe->revision!=token)return;safe->detach();safe->rendered=result;safe->renderedRevision=token;safe->sourceStep=result->dry->sampleRate/safe->deviceRate;safe->selectionStart=a;safe->selectionEnd=b;safe->position=a;safe->scope.data=result;safe->busy=false;safe->attach();safe->selectionFrom.setText(juce::String(a/result->dry->sampleRate,3),false);safe->selectionTo.setText(juce::String(b/result->dry->sampleRate,3),false);
+            juce::MessageManager::callAsync([safe,token,result,a,b]{if(!safe||safe->revision!=token)return;safe->detach();safe->rendered=result;safe->renderedRevision=token;safe->sourceStep=result->dry->sampleRate/safe->deviceRate;safe->selectionStart=a;safe->selectionEnd=juce::jmin<int64_t>(b,result->dry->frames()-result->latency);safe->position=a;safe->scope.data=result;safe->busy=false;safe->attach();safe->selectionFrom.setText(juce::String(a/result->dry->sampleRate,3),false);safe->selectionTo.setText(juce::String(b/result->dry->sampleRate,3),false);
 
-                const auto& c=result->comparison;safe->metrics.setText(c.valid?"Selected RMS | dry "+juce::String(20*std::log10(juce::jmax(1e-12,c.dryRms)),1)+" dBFS | wet "+juce::String(20*std::log10(juce::jmax(1e-12,c.wetRms)),1)+" dBFS | frozen match "+juce::String(20*std::log10(c.gain),2)+" dB"+(c.gainCapped?" (capped)":"")+" | delay "+juce::String(result->latency)+" samples | ingress clamps "+juce::String((juce::int64)result->ingressClamps):"Comparison unavailable: passage is silent or invalid.",juce::dontSendNotification);
+                const auto& c=result->comparison;safe->metrics.setText(c.valid?"Selected RMS | dry "+juce::String(20*std::log10(juce::jmax(1e-12,c.dryRms)),1)+" dBFS | wet "+juce::String(20*std::log10(juce::jmax(1e-12,c.wetRms)),1)+" dBFS | frozen match "+juce::String(20*std::log10(c.gain),2)+" dB"+(c.gainCapped?" (capped)":"")+" | delay "+juce::String(result->latency)+" samples (tail excluded) | ingress clamps "+juce::String((juce::int64)result->ingressClamps):"Comparison unavailable: passage is silent or invalid.",juce::dontSendNotification);
 
                 safe->setStatus("Ready | "+juce::String(result->dry->sampleRate,0)+" Hz source | "+juce::String(result->dry->frames()/result->dry->sampleRate,2)+" s | Residual = wet - dry; it is not isolated distortion.");safe->scope.repaint();});
 
@@ -580,7 +604,7 @@ private:
 
         if(enabled){if(deviceRate<44100||deviceRate>96000){live.setToggleState(false,juce::dontSendNotification);setStatus("Live input supports device rates from 44.1 to 96 kHz in this build. Choose a supported rate in Audio devices.");return;}auto* d=devices.getCurrentAudioDevice();if(!d||d->getActiveInputChannels().countNumberOfSetBits()==0){live.setToggleState(false,juce::dontSendNotification);showDevices();setStatus("Select an input in Audio devices, then explicitly enable monitoring. Use headphones to avoid feedback.");return;}
 
-            detach();capture.sampleRate=deviceRate;capture.samples.assign(2,std::vector<float>((size_t)(deviceRate*maxSeconds),0));captureFrames=0;attach();monitoring=true;setStatus("LIVE monitoring on | use headphones | output guard at -0.45 dBFS | residual audition requires captured replay.");
+            detach();liveEngine.setParameters(parameters());commandRead.store(commandWrite.load());capture.sampleRate=deviceRate;capture.samples.assign(2,std::vector<float>((size_t)(deviceRate*maxSeconds),0));captureFrames=0;attach();monitoring=true;setStatus("LIVE monitoring on | use headphones | output guard at -0.45 dBFS | residual audition requires captured replay.");
 
         }else{monitoring=false;setStatus("Live monitoring off. Capture remains local and is never uploaded.");}
 
@@ -604,7 +628,7 @@ private:
 
         auto* values=new juce::DynamicObject();for(auto& c:controls)values->setProperty(c->key,c->slider.getValue());
 
-        values->setProperty("compressor",stages[0].getToggleState());values->setProperty("equalizer",stages[1].getToggleState());values->setProperty("drive",stages[2].getToggleState());
+        values->setProperty("oversampling",oversampling);values->setProperty("multiband",multiband);values->setProperty("compressor",stages[0].getToggleState());values->setProperty("equalizer",stages[1].getToggleState());values->setProperty("drive",stages[2].getToggleState());
 
         juce::Array<juce::var> sequence;for(auto v:parameters().order)sequence.add(v);values->setProperty("order",sequence);root->setProperty("parameters",juce::var(values));
 
@@ -632,7 +656,7 @@ private:
 
             auto* values=obj->getProperty("parameters").getDynamicObject();auto* ui=obj->getProperty("ui").getDynamicObject();if(!values){safe->setStatus("Session parameters must be an object.");return;}
 
-            tonescope::Parameters p;for(auto& control:safe->controls){auto value=values->getProperty(control->key);if(value.isVoid())continue;if(!(value.isDouble()||value.isInt()||value.isInt64())){safe->setStatus("Session controls must be numeric.");return;}auto v=(double)value;if(!std::isfinite(v)||v<control->slider.getMinimum()||v>control->slider.getMaximum()){safe->setStatus("Session contains an out-of-range control.");return;}p.*(control->member)=(float)v;}
+            auto p=tonescope::session::loadParameters(file);for(auto& control:safe->controls){auto value=values->getProperty(control->key);if(value.isVoid())continue;if(!(value.isDouble()||value.isInt()||value.isInt64())){safe->setStatus("Session controls must be numeric.");return;}auto v=(double)value;if(!std::isfinite(v)||v<control->slider.getMinimum()||v>control->slider.getMaximum()){safe->setStatus("Session contains an out-of-range control.");return;}p.*(control->member)=(float)v;}
 
             for(auto key:{"compressor","equalizer","drive"}){auto value=values->getProperty(key);if(!value.isVoid()&&!value.isBool()){safe->setStatus("Stage enable flags must be boolean.");return;}}
 
@@ -650,7 +674,7 @@ private:
 
             for(auto& control:safe->controls)control->slider.setValue(p.*(control->member),juce::dontSendNotification);
 
-            safe->stages[0].setToggleState(p.compressor,juce::dontSendNotification);safe->stages[1].setToggleState(p.equalizer,juce::dontSendNotification);safe->stages[2].setToggleState(p.drive,juce::dontSendNotification);
+            safe->oversampling=p.oversampling;safe->multiband=p.multiband;safe->stages[0].setToggleState(p.compressor,juce::dontSendNotification);safe->stages[1].setToggleState(p.equalizer,juce::dontSendNotification);safe->stages[2].setToggleState(p.drive,juce::dontSendNotification);
 
             constexpr std::array<std::array<int,3>,6> orders{{{0,1,2},{2,1,0},{1,0,2},{0,2,1},{1,2,0},{2,0,1}}};for(size_t i=0;i<orders.size();++i)if(orders[i]==p.order)safe->order.setSelectedId((int)i+1,juce::dontSendNotification);
 
@@ -733,4 +757,3 @@ public:
 }
 
 START_JUCE_APPLICATION(Application)
-
