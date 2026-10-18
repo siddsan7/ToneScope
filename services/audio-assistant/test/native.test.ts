@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp,writeFile,readFile,rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { NativeCliAdapter } from '../agent/lib/native-cli.ts';
+import { NativeCliAdapter,type NativeAsset } from '../agent/lib/native-cli.ts';
 import { AssistantService } from '../agent/lib/service.ts';
 import { StateStore } from '../agent/lib/store.ts';
 import type { Snapshot } from '../agent/lib/contracts.ts';
@@ -63,6 +63,20 @@ test('actual cropped native preview preserves selection binding and charges preh
   const adapter=new NativeCliAdapter(executable!,assets,join(dir,'previews'));
   const output=await new AssistantService(adapter,new StateStore(join(dir,'state'))).run({schema_version:1,request_id:'cropped_1',session_id:'cropped_session',prompt:'make louder'});
   assert.equal(output.status,'ready',JSON.stringify(output));assert.ok(output.preview);assert.deepEqual(output.proposal?.selection_samples,[start,end]);assert.equal(output.usage.candidate_frames,end);assert.ok(output.preview.measurements[0].value>output.proposal!.evidence_refs[0].value+5.9);
+  const measured=JSON.parse(execFileSync(executable!,['inspect','--source',baseline],{encoding:'utf8',windowsHide:true}));
+  const binding={session_id:snapshot.session_id,session_revision:snapshot.session_revision,source_sha256:snapshot.source_sha256,base_graph_sha256:snapshot.base_graph_sha256,selection_samples:snapshot.selection_samples,sample_rate:snapshot.sample_rate};
+  const metricsAsset:NativeAsset={snapshot,source_path:source,parameters:{outputDb:0},baseline_metrics:{rms:measured.rms,peak:measured.peak,alignment_samples:0,binding}};
+  const metricAssets=new Map([[snapshot.session_id,metricsAsset]]),fallback=new NativeCliAdapter(executable!,metricAssets,join(dir,'fallback'));
+  const signal=new AbortController().signal;
+  assert.deepEqual(await fallback.measurements(snapshot,signal),await adapter.measurements(snapshot,signal));
+  const metricOutput=await new AssistantService(fallback,new StateStore(join(dir,'metric-state'))).run({schema_version:1,request_id:'metrics_1',session_id:snapshot.session_id,prompt:'make louder'});
+  assert.equal(metricOutput.status,'ready',JSON.stringify(metricOutput));assert.ok(metricOutput.preview);
+  const delta=await fallback.compare(snapshot,metricOutput.preview,signal);assert.equal(delta.length,1);assert.equal(delta[0].measurement_id,'rms_delta_db');assert.ok(Math.abs(delta[0].value-6)<1e-4);
+  for(const altered of [{session_revision:99},{source_sha256:'f'.repeat(64)},{base_graph_sha256:'e'.repeat(64)},{selection_samples:[start+1,end] as [number,number]},{sample_rate:44100},{session_id:'other'}]){
+   metricAssets.set(snapshot.session_id,{...metricsAsset,baseline_metrics:{...metricsAsset.baseline_metrics!,binding:{...binding,...altered}}});
+   await assert.rejects(fallback.measurements(snapshot,signal),/baseline_binding_mismatch/);
+  }
+  metricAssets.set(snapshot.session_id,{...metricsAsset,baseline_metrics:{...metricsAsset.baseline_metrics!,alignment_samples:32}});await assert.rejects(fallback.measurements(snapshot,signal),/baseline_alignment_mismatch/);
   const candidateManifest=JSON.parse(await readFile(adapter.previewPath('cropped_session',output.preview.preview_id)+'.json','utf8'));
   assert.equal(candidateManifest.frames,end-start);assert.equal(candidateManifest.processed_frames,end);assert.deepEqual(candidateManifest.selection_samples,[start,end]);
  }finally{await rm(dir,{recursive:true,force:true});}
