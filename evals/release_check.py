@@ -106,7 +106,17 @@ def validate_manifest(path):
     if not manifest["holdout_manifests"]:
         errors.append("holdout manifest evidence missing")
     for ref in manifest["holdout_manifests"]:
-        file_ref(ref, "holdout manifest")
+        target = file_ref(ref, "holdout manifest")
+        if target:
+            try:
+                from dataset import validate_inventory
+                inventory=json.loads(target.read_text(encoding="utf-8"))
+                if (not isinstance(inventory,dict) or inventory.get("holdout_qualified") is not True
+                    or not inventory.get("items") or validate_inventory(inventory)
+                    or not any(i.get("split")=="locked-test" for i in inventory["items"])):
+                    errors.append("holdout manifest must contain a qualified locked test inventory")
+            except (ValueError,TypeError,AttributeError):
+                errors.append("holdout manifest is not structured corpus evidence")
     required_manual = {"hardware", "listening", "accessibility", "installation"}
     kinds = set()
     for ref in manifest["manual_qualification"]:
