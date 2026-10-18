@@ -118,6 +118,12 @@ inline std::pair<double,double> measuredDb(const tonescope::AudioData& audio,int
  for(const auto& channel:audio.samples)for(auto i=first;i<last;++i){const auto value=double(channel[(size_t)i]);require(std::isfinite(value),"Nonfinite native measurement.");energy+=value*value;peak=std::max(peak,std::abs(value));++count;}
  const auto db=[](double value){return 20*std::log10(std::max(1e-12,value));};return {db(std::sqrt(energy/double(count))),db(peak)};
 }
+struct FrozenMatch {double gain=1,db=0;bool capped=false,valid=false;};
+inline FrozenMatch frozenMatch(double baselineRms,double candidateRms){
+ if(!std::isfinite(baselineRms)||!std::isfinite(candidateRms)||baselineRms<=1e-9||candidateRms<=1e-9)return {};
+ const double requestedDb=20*(std::log10(baselineRms)-std::log10(candidateRms));const double db=std::clamp(requestedDb,-12.,12.);
+ return {std::pow(10.,db/20),db,std::abs(requestedDb-db)>1e-9,true};
+}
 struct Ready {
  juce::var envelope,proposal,preview;
  juce::File audioFile;

@@ -12,6 +12,11 @@ int main(){
  try{
   require(folder.createDirectory(),"Cannot create native test directory.");
   require(capability()!=capability(),"OS capabilities repeated.");
+  const auto unity=frozenMatch(.1,.1),lower=frozenMatch(.1,.2),upperCap=frozenMatch(.1,.001),lowerCap=frozenMatch(.001,.1);
+  require(unity.valid&&std::abs(unity.gain-1)<1e-12&&!unity.capped&&lower.valid&&std::abs(lower.gain-.5)<1e-12&&!lower.capped,"Frozen selected-RMS matching differs.");
+  require(upperCap.valid&&upperCap.capped&&upperCap.db==12&&lowerCap.capped&&lowerCap.db==-12,"Frozen RMS match exceeded its twelve-decibel cap.");
+  for(const auto value:{0.,1e-10,std::numeric_limits<double>::quiet_NaN(),std::numeric_limits<double>::infinity()})require(!frozenMatch(value,.1).valid&&!frozenMatch(.1,value).valid&&frozenMatch(value,.1).gain==1,"Silent or invalid RMS produced gain.");
+
   require(!uuid("../preview.wav")&&!uuid("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx")&&uuid(juce::Uuid().toDashedString()),"Invalid UUID path validation.");
   tonescope::AudioData input;input.sampleRate=48000;input.samples.assign(1,std::vector<float>(48000));
   for(size_t i=0;i<input.samples[0].size();++i)input.samples[0][i]=(float)(.04*std::sin(2*juce::MathConstants<double>::pi*440*i/48000.));
@@ -30,6 +35,7 @@ int main(){
   require(ready.audio->frames()==context.last-context.first,"Candidate crop layout differs.");
   const auto base=measuredDb(*context.rawWet,context.first+context.alignment,context.last+context.alignment),candidate=measuredDb(*ready.audio,0,ready.audio->frames());
   require(std::abs(candidate.first-base.first-6)<1e-4,"Actual candidate gain differs from its numerical patch.");
+  const auto actualMatch=frozenMatch(std::pow(10.,base.first/20),std::pow(10.,candidate.first/20));require(actualMatch.valid&&!actualMatch.capped&&std::abs(actualMatch.db+6)<1e-4&&std::abs(candidate.first+actualMatch.db-base.first)<1e-8,"Actual candidate frozen match did not equal the original processed selected RMS.");require(context.parameters.outputDb==0&&ready.parameters.outputDb==6,"Audition matching modified graph settings.");
   auto changed=copy(response);changed["proposal"].getDynamicObject()->setProperty("session_revision",8);rejected([&]{validateReady(context,changed,bridge->previewDirectory());},"Stale proposal accepted.");
   changed=copy(response);changed["proposal"].getDynamicObject()->setProperty("requires_user_acceptance",false);rejected([&]{validateReady(context,changed,bridge->previewDirectory());},"Automatic acceptance was accepted.");
   changed=copy(response);changed["proposal"]["evidence_refs"].getArray()->getReference(0).getDynamicObject()->setProperty("value",-3.);changed.getDynamicObject()->setProperty("evidence_refs",changed["proposal"]["evidence_refs"]);rejected([&]{validateReady(context,changed,bridge->previewDirectory());},"Forged numerical evidence accepted.");

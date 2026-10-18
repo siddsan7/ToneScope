@@ -5,7 +5,10 @@ std::shared_ptr<tonescope::desktop::assistant::Ready> assistantReady;
 std::shared_ptr<const Rendered> assistantPreviewRender,assistantOriginalRender;
 juce::String assistantState="unavailable",assistantMessage="Optional assistant is starting.";
 uint64_t assistantGeneration=0,assistantOriginalRevision=0;
+juce::String assistantAuditionSource="candidate";bool assistantMatched=false,assistantMatchCapped=false;double assistantMatchGainDb=0;
 int assistantOriginalMode=2;bool assistantOriginalMatch=false,assistantAuditioning=false,assistantOriginalLoop=false,assistantOriginalPlaying=false;double assistantOriginalPosition=0;
+
+bool assistantPreviewActive() const{return assistantAuditioning;}
 
 bool assistantCurrent(const tonescope::desktop::assistant::Context& context) const {
  return source&&context.revision==revision&&context.sourceHash==sourceDigest&&context.graphHash==tonescope::session::hashParameters(parameters())&&context.sourceFile==sourceFile&&context.first==selectionStart.load()&&context.last==selectionEnd.load()&&!monitoring.load()&&!busy&&auditionBand==0;
@@ -15,7 +18,7 @@ void restoreAssistantAudition(){
  playing=false;retireFilePlayback();detach();rendered=assistantOriginalRender;renderedRevision=assistantOriginalRevision;
  if(rendered){scope.data=rendered;sourceStep=rendered->dry->sampleRate/deviceRate.load();}
  mode.setSelectedId(assistantOriginalMode,juce::dontSendNotification);audition=assistantOriginalMode;match.setToggleState(assistantOriginalMatch,juce::dontSendNotification);
- loop.setToggleState(assistantOriginalLoop,juce::dontSendNotification);looping=assistantOriginalLoop;position=assistantOriginalPosition;assistantOriginalRender.reset();assistantAuditioning=false;attach();if(assistantOriginalPlaying){if(streamedSource)startFilePlayback((int64_t)assistantOriginalPosition);else playing=true;}
+ loop.setToggleState(assistantOriginalLoop,juce::dontSendNotification);looping=assistantOriginalLoop;position=assistantOriginalPosition;assistantOriginalRender.reset();assistantAuditioning=false;assistantMatched=false;assistantMatchCapped=false;assistantMatchGainDb=0;attach();if(assistantOriginalPlaying){if(streamedSource)startFilePlayback((int64_t)assistantOriginalPosition);else playing=true;}
 }
 void assistantSessionChanged(){
  restoreAssistantAudition();
@@ -28,7 +31,7 @@ void updateAssistant(){
 }
 juce::var assistantPublicState(){
  using namespace tonescope::desktop::assistant;
- auto result=object({{"status",assistantState},{"message",assistantMessage}});
+ auto result=object({{"status",assistantState},{"message",assistantMessage},{"auditioning",assistantAuditioning},{"auditionSource",assistantAuditionSource},{"matched",assistantMatched},{"matchGainDb",assistantMatchGainDb},{"capped",assistantMatchCapped}});
  if(assistantContext)result.getDynamicObject()->setProperty("requestId",assistantContext->requestId);
  if(assistantReady&&assistantContext){
   juce::String predicted;for(const auto& item:*assistantReady->proposal["hypotheses"].getArray()){if(predicted.isNotEmpty())predicted+=" ";predicted+=item.toString();}
@@ -112,24 +115,39 @@ juce::var handleAssistantCommand(const juce::String& action,const juce::var& inp
   }catch(const std::exception& error){assistantState="error";assistantMessage=error.what();}
   return assistantPublicState();
  }
- if(action=="assistant.preview"||action=="assistant.apply"){
+ if(action=="assistant.preview"||action=="assistant.audition"||action=="assistant.apply"){
   if(assistantState=="running")return assistantPublicState();
-  if(!assistantReady||!assistantContext||input["proposalId"].toString()!=assistantContext->requestId||!assistantCurrent(*assistantContext))return assistantPublicState();
+  if(!assistantReady||!assistantContext||!assistantCurrent(*assistantContext))return assistantPublicState();
+  const bool switching=action=="assistant.audition";
+  if(switching){if(!closed(input,{"source","matching"})||!input["source"].isString()||(input["source"].toString()!="baseline"&&input["source"].toString()!="candidate")||!input["matching"].isBool())return assistantPublicState();}
+  else if(input["proposalId"].toString()!=assistantContext->requestId)return assistantPublicState();
+  const juce::String selectedSource=switching?input["source"].toString():juce::String("candidate");const bool requestedMatching=switching&&bool(input["matching"]);
   const bool apply=action=="assistant.apply";
   if(apply&&(!integer(input["revision"])||juce::int64(input["revision"])!=(juce::int64)assistantContext->revision))return assistantPublicState();
-  restoreAssistantAudition();
+  if(apply)restoreAssistantAudition();
   auto safe=juce::Component::SafePointer<Main>(this);auto bridge=assistantBridge;auto context=*assistantContext;auto ready=assistantReady;const auto generation=assistantGeneration;
   assistantState="running";assistantMessage=apply?"Verifying the selected preview before acceptance...":"Verifying the selected preview before audition...";
-  bridge->post([safe,bridge,context,ready,generation,apply]{juce::String error;
-   try{require(fileHash(context.sourceFile)==context.sourceHash,"Source changed before assistant acceptance.");require(fileHash(ready->audioFile)==ready->preview["audio_sha256"].toString(),"Assistant preview changed after evaluation.");}
+  bridge->post([safe,bridge,context,ready,generation,apply,selectedSource,requestedMatching]{juce::String error;FrozenMatch matching;
+   try{require(fileHash(context.sourceFile)==context.sourceHash,"Source changed before assistant acceptance.");require(fileHash(ready->audioFile)==ready->preview["audio_sha256"].toString(),"Assistant preview changed after evaluation.");auto verified=validateReady(context,ready->envelope,bridge->previewDirectory());
+    const auto base=context.metricsOnly?context.baselineRms:std::pow(10.,measuredDb(*context.rawWet,context.first-context.cacheOffset+context.alignment,context.last-context.cacheOffset+context.alignment).first/20.);
+    const auto candidate=std::pow(10.,measuredDb(*verified.audio,0,verified.audio->frames()).first/20.);matching=frozenMatch(base,candidate);}
    catch(const std::exception& failure){error=failure.what();}
-   juce::MessageManager::callAsync([safe,context,ready,generation,apply,error]{
+   juce::MessageManager::callAsync([safe,context,ready,generation,apply,error,selectedSource,requestedMatching,matching]{
     if(!safe||safe->assistantGeneration!=generation||!safe->assistantContext||safe->assistantContext->requestId!=context.requestId||!safe->assistantCurrent(context))return;
-    if(error.isNotEmpty()){safe->assistantState="error";safe->assistantMessage=error;return;}
+    if(error.isNotEmpty()){safe->restoreAssistantAudition();safe->assistantReady.reset();safe->assistantPreviewRender.reset();safe->assistantState="error";safe->assistantMessage=error;return;}
     if(apply){auto parameters=ready->parameters;if(safe->applyParameterTransaction(parameters)){safe->assistantReady.reset();safe->assistantPreviewRender.reset();safe->assistantContext.reset();safe->assistantState="idle";safe->assistantMessage="Accepted the verified parameter proposal. Undo reverses the complete transaction.";}else{safe->assistantState="error";safe->assistantMessage="Native parameter validation rejected the proposal. No change was applied.";}}
     else if(safe->assistantPreviewRender){
-     const bool wasPlaying=safe->playing.load();safe->playing=false;safe->detach();safe->assistantOriginalRender=safe->rendered;safe->assistantOriginalRevision=safe->renderedRevision;safe->assistantOriginalMode=safe->mode.getSelectedId();safe->assistantOriginalMatch=safe->match.getToggleState();safe->assistantOriginalLoop=safe->loop.getToggleState();safe->assistantOriginalPlaying=wasPlaying;safe->assistantOriginalPosition=safe->position.load();
-     safe->rendered=safe->assistantPreviewRender;safe->renderedRevision=std::numeric_limits<uint64_t>::max();safe->scope.data=safe->rendered;safe->mode.setSelectedId(2,juce::dontSendNotification);safe->audition=2;safe->match.setToggleState(false,juce::dontSendNotification);safe->sourceStep=context.sampleRate/safe->deviceRate.load();safe->position=context.first;safe->assistantAuditioning=true;safe->loop.setToggleState(false,juce::dontSendNotification);safe->looping=false;safe->attach();if(!safe->startCandidatePlayback(ready->audioFile,ready->preview["audio_sha256"].toString(),context.first,context.last-context.first)){safe->restoreAssistantAudition();safe->assistantState="error";safe->assistantMessage="Native candidate playback rejected the verified preview.";return;}safe->assistantState="ready";safe->assistantMessage="Auditioning the verified candidate at raw processed gain. Parameters are unchanged; export is disabled during this preview.";
+     if(!safe->assistantAuditioning){
+      safe->assistantOriginalPlaying=safe->playing.load()||safe->streamPlayRequested;safe->assistantOriginalPosition=safe->position.load();safe->assistantOriginalRender=safe->rendered;safe->assistantOriginalRevision=safe->renderedRevision;safe->assistantOriginalMode=safe->mode.getSelectedId();safe->assistantOriginalMatch=safe->match.getToggleState();safe->assistantOriginalLoop=safe->loop.getToggleState();
+     }
+     safe->playing=false;safe->retireFilePlayback();safe->detach();
+     const bool candidate=selectedSource=="candidate";const bool matched=candidate&&requestedMatching&&matching.valid;
+     auto auditionRender=std::make_shared<Rendered>(*(candidate?safe->assistantPreviewRender:safe->assistantOriginalRender));auditionRender->comparison.valid=true;auditionRender->comparison.gain=matched?matching.gain:1.;
+     safe->rendered=auditionRender;safe->renderedRevision=std::numeric_limits<uint64_t>::max();safe->scope.data=safe->rendered;safe->mode.setSelectedId(2,juce::dontSendNotification);safe->audition=2;safe->match.setToggleState(matched,juce::dontSendNotification);safe->sourceStep=context.sampleRate/safe->deviceRate.load();safe->position=context.first;safe->assistantAuditioning=true;safe->assistantAuditionSource=selectedSource;safe->assistantMatched=matched;safe->assistantMatchGainDb=matched?matching.db:0;safe->assistantMatchCapped=matched&&matching.capped;safe->loop.setToggleState(false,juce::dontSendNotification);safe->looping=false;safe->attach();
+     const bool accepted=candidate?safe->startCandidatePlayback(ready->audioFile,ready->preview["audio_sha256"].toString(),context.first,context.last-context.first):(safe->startFilePlayback(context.first),true);
+     if(!accepted){safe->restoreAssistantAudition();safe->assistantState="error";safe->assistantMessage="Native audition rejected the verified selection.";return;}
+     safe->assistantState="ready";safe->assistantMessage=candidate?(matched?"Auditioning candidate with frozen RMS match to the current processed selection.":requestedMatching?"Candidate RMS match unavailable for a silent or invalid selection; auditioning raw candidate.":"Auditioning raw candidate."):"Auditioning the current processed baseline at raw gain.";
+
     }
    });
   });
