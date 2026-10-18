@@ -15,6 +15,11 @@ function Include([string]$Source, [string]$Target) {
 }
 Include "$(Absolute $BuildRoot)/ToneScope_artefacts/Release/ToneScope.exe" 'bin/ToneScope.exe'
 Include "$(Absolute $BuildRoot)/tonescope_cli_artefacts/Release/tonescope_cli.exe" 'bin/tonescope_cli.exe'
+$buildIdentity = & (Join-Path $stage 'bin/tonescope_cli.exe') build-info
+if ($LASTEXITCODE -ne 0) { throw 'Packaged renderer build identity failed' }
+$identity = $buildIdentity | ConvertFrom-Json
+if ($identity.schema_version -ne 1 -or -not $identity.commit_sha -or -not $identity.source_identity_sha256) { throw 'Packaged renderer build identity incomplete' }
+$buildIdentity | Set-Content -LiteralPath (Join-Path $stage 'build-info.json') -Encoding utf8
 foreach ($name in @('host.mjs','dependencies.json','THIRD-PARTY-NOTICES.txt','frontend-dependencies.json','FRONTEND-NOTICES.txt')) { Include "$(Absolute $AssistantBundle)/$name" "bin/assistant/$name" }
 $legal = "$(Absolute $AssistantBundle)/host.mjs.LEGAL.txt"
 if (Test-Path -LiteralPath $legal) { Include $legal 'bin/assistant/host.mjs.LEGAL.txt' }
@@ -26,6 +31,7 @@ Include 'apps/frontend/public/fonts/SpaceGrotesk-OFL.txt' 'docs/licenses/SpaceGr
 Include 'apps/frontend/public/fonts/CommitMono-OFL.txt' 'docs/licenses/CommitMono-OFL.txt'
 Include 'apps/frontend/src/components/ui/LICENSE.md' 'docs/licenses/shadcn-LICENSE.md'
 Include 'docs/distribution/development.md' 'docs/development.md'
+Include 'docs/runbooks.md' 'docs/runbooks.md'
 @"
 UNSIGNED PRIVATE DEVELOPMENT BUILD; NOT A QUALIFIED RELEASE.
 Windows x64. Microsoft VC++ 2015-2022 x64 runtime and Evergreen WebView2 runtime

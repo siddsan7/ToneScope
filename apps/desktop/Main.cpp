@@ -19,6 +19,7 @@
 #include "FilePlayback.h"
 #include "CallbackProbe.h"
 #include "CallbackReport.h"
+#include <ToneScopeBuildIdentity.h>
 #if __has_include("AssistantBridge.h")
 #include "AssistantBridge.h"
 #endif
@@ -424,6 +425,17 @@ private:
     void exportCallbackProfile(){
         auto snapshot=callbackProfileSnapshot();auto* detail=snapshot.getDynamicObject();
         detail->setProperty("exported_utc",juce::Time::getCurrentTime().toISO8601(true));
+        detail->setProperty("build_identity",juce::JSON::parse(juce::String(tonescopeBuildIdentity)));
+        auto* counters=new juce::DynamicObject;
+        counters->setProperty("invalid_samples_last_live_engine_reset",(juce::int64)invalid.load());
+        counters->setProperty("monitor_guard_samples",(juce::int64)guardSamples.load());
+        counters->setProperty("stream_starvation_stops",(juce::int64)streamStarvationStops);
+        counters->setProperty("source_worker_failures",(juce::int64)sourceWorkerFailures);
+        counters->setProperty("capture_overflows",(juce::int64)captureOverflows);
+        counters->setProperty("device_control_fault_notifications",(juce::int64)deviceFaultNotifications);
+        counters->setProperty("control_queue_full_events",(juce::int64)controlQueueFullEvents);
+        counters->setProperty("scope","Observed events in this app process; message-thread fault notifications may coalesce. Invalid samples reset with the live engine. Not OS xruns or exhaustive fault telemetry.");
+        detail->setProperty("runtime_observations",juce::var(counters));
         detail->setProperty("graph_sha256",tonescope::session::hashParameters(parameters()));
         if(auto* device=devices.getCurrentAudioDevice()){
             detail->setProperty("device_name",device->getName());detail->setProperty("device_type",device->getTypeName());
@@ -466,6 +478,7 @@ private:
     std::atomic<int> audition{2};std::atomic<double> position{0};std::atomic<int64_t> selectionStart{0},selectionEnd{0};
 
     std::atomic<float> outputPeak{0},reduction{0};std::atomic<uint64_t> invalid{0},guardSamples{0};
+    std::uint64_t streamStarvationStops=0,sourceWorkerFailures=0,captureOverflows=0,deviceFaultNotifications=0,controlQueueFullEvents=0;
 
     std::array<tonescope::Parameters,32> commands{};std::atomic<unsigned> commandWrite{0},commandRead{0};
 
@@ -540,7 +553,7 @@ private:
         if(!restoringParameters)history.commit(p);markRecovery();
 
         if(topology){playing=false;detach();commandRead.store(commandWrite.load());attach();}
-        auto w=commandWrite.load();if(w-commandRead.load(std::memory_order_acquire)<commands.size()){commands[w%commands.size()]=p;commandWrite.store(w+1,std::memory_order_release);}else setStatus("Control queue full; pause adjustment and retry.");
+        auto w=commandWrite.load();if(w-commandRead.load(std::memory_order_acquire)<commands.size()){commands[w%commands.size()]=p;commandWrite.store(w+1,std::memory_order_release);}else{++controlQueueFullEvents;setStatus("Control queue full; pause adjustment and retry.");}
 
         if(source&&!monitoring){playing=false;busy=true;renderDue=juce::Time::currentTimeMillis()+180;++revision;setStatus("Settings changed | updating comparison...");}
 
@@ -554,14 +567,14 @@ private:
         updateAssistant();
         if(retiringPlayback&&retiringPlayback->finished()){retiringPlayback->cancel();retiringPlayback.reset();if(streamDeferredStart){auto start=std::move(streamDeferredStart);streamDeferredStart={};start();}}
         if(filePlayback){
-            if(filePlayback->failed()){retireFilePlayback();setStatus("Source verification/read failed; streamed playback stopped.");}
+            if(filePlayback->failed()){++sourceWorkerFailures;retireFilePlayback();setStatus("Source verification/read failed; streamed playback stopped.");}
             else if(streamPlaybackRate!=deviceRate.load()){retireFilePlayback();setStatus("Device rate changed. Streamed playback stopped; press Play to prepare again.");}
             else if(streamPlayRequested){if(filePlayback->failed()){retireFilePlayback();setStatus("Streamed source verification/read failed. Playback remains stopped.");}else if(filePlayback->ready()){streamPlayRequested=false;playing=true;}else setStatus("Reconstructing exact source history for playback | "+juce::String(filePlayback->progress()*100,1)+"% of requested history");}
         }
-        if(auto event=streamEvent.exchange(0);event!=0){if(event==2&&looping&&streamedSource)startFilePlayback(selectionStart.load());else{retireFilePlayback();setStatus(event==2?"Streamed selection ended.":"Streamed playback stopped after starvation or a source read fault. No fallback audio was substituted.");}}
+        if(auto event=streamEvent.exchange(0);event!=0){if(event==1)++streamStarvationStops;if(event==3)++sourceWorkerFailures;if(event==2&&looping&&streamedSource)startFilePlayback(selectionStart.load());else{retireFilePlayback();setStatus(event==2?"Streamed selection ended.":"Streamed playback stopped after starvation or a source read fault. No fallback audio was substituted.");}}
         if(busy&&streamedSource&&inspectionProgress)setStatus("Preparing bounded inspection with exact history from frame zero | "+juce::String(inspectionProgress->load()*100,1)+"%");
 
-        if(deviceFault.exchange(false)){live.setToggleState(false,juce::dontSendNotification);setStatus("Monitoring stopped after a device or control fault. Check Audio devices, then explicitly re-enable.");}
+        if(deviceFault.exchange(false)){++deviceFaultNotifications;live.setToggleState(false,juce::dontSendNotification);setStatus("Monitoring stopped after a device or control fault. Check Audio devices, then explicitly re-enable.");}
 
         if(renderDue&&juce::Time::currentTimeMillis()>=renderDue){renderDue=0;requestRender();}
 
@@ -796,7 +809,7 @@ private:
                 auto* metadata=new juce::DynamicObject();metadata->setProperty("schema_version",1);metadata->setProperty("complete",complete);metadata->setProperty("frames",(juce::int64)worker->frames());metadata->setProperty("fault",(int)worker->fault());metadata->setProperty("capture_tap","sanitized raw device input before ingress clamp and input trim");
                 saved.withFileExtension("capture.json").replaceWithText(juce::JSON::toString(juce::var(metadata)));
             }
-            juce::MessageManager::callAsync([safe,saved,complete,worker,token]{if(!safe)return;safe->captureFinalizing=false;safe->captureButton.setButtonText("Capture take");if(safe->revision!=token)return;safe->busy=false;
+            juce::MessageManager::callAsync([safe,saved,complete,worker,token]{if(!safe)return;if(worker->fault()==tonescope::desktop::CaptureWorker::Fault::overflow)++safe->captureOverflows;safe->captureFinalizing=false;safe->captureButton.setButtonText("Capture take");if(safe->revision!=token)return;safe->busy=false;
                 if(!complete){safe->setStatus("Capture incomplete (overflow, interruption or disk fault). Preserved at "+saved.getFullPathName()+". Import explicitly to inspect the retained prefix.");return;}
                 safe->loadAudio(saved);});
         }),true);

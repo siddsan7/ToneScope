@@ -25,7 +25,8 @@ jobs:
             services/audio-assistant/package-lock.json
       - run: npm ci --ignore-scripts
         working-directory: services/audio-assistant
-      - run: cmake --preset windows-dev
+      - run: ./scripts/bootstrap.ps1
+      - run: ./.tools/python/cmake/data/bin/cmake.exe --preset windows-dev
       - run: cmake --build --preset windows-dev -- /m:1 /nr:false
       - run: ctest --preset windows-dev --output-on-failure
       - name: Native app startup without opening hardware
@@ -43,6 +44,10 @@ jobs:
         working-directory: apps/frontend
         shell: cmd
       - run: python -m unittest discover -s tests/integration -v
+      - run: python scripts/test-smoothing-mutation.py --output artifacts/smoothing-mutation
+      - run: python scripts/test-schema-mutation.py --root . --output artifacts/schema-mutation
+      - name: Actual assistant tool-validation mutations
+        run: node services/audio-assistant/scripts/test-tool-mutation.mjs --output "${{ github.workspace }}/artifacts/tool-mutation"
       - name: Private package and installation regression checks
         shell: pwsh
         run: |
@@ -59,6 +64,8 @@ jobs:
           ./scripts/tonescope.ps1 eval --suite dsp --output artifacts/dsp
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python evals/run.py --suite ai-replay --split development --output artifacts/ai-replay
+          if ($LASTEXITCODE -ne 2) { throw 'Replay must retain its explicitly blocked live qualification' }
+          python evals/check_development.py artifacts/ai-replay/run.json
           exit $LASTEXITCODE
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()

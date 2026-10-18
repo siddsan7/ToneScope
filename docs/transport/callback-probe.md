@@ -43,6 +43,13 @@ an exportable JUCE JSON value containing bins, estimates, actual nominal-period
 range, calibration/context labels and fixed-storage sizes. File saving remains a
 message/file-worker operation; no export occurs in the callback.
 
+The embedded interface exposes Observe callback timing, Reset observations and
+Export observations under Callback observations. Export uses a dedicated
+kind/version-checked JSON publisher with readback and atomic replacement; it does
+not accept the session schema. The native file chooser confirms replacements and
+the source WAV cannot be the report destination. Device identity is included only
+in the explicitly requested local export; review it before sharing. The export also includes compiled source identity and scoped runtime counters (queue-full events, observed starvation/source faults, capture overflows and coalesced device/control fault notifications). It excludes paths, waveform samples, session contents and credentials; counters are process observations, not OS xruns or exhaustive telemetry.
+
 Verification uses deterministic injected elapsed times for counts, deadline
 edges, percentile bounds, unknown periods and aggregate/bucket overflow; it also
 checks concurrent snapshots, monotonic counts/clock, reset and disabled behavior,

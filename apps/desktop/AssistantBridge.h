@@ -242,6 +242,7 @@ public:
  void request(Context context,juce::String prompt,Completion complete){
   auto self=shared_from_this();post([self,context=std::move(context),prompt=std::move(prompt),complete=std::move(complete)]()mutable{
    try{
+    std::unique_lock serverLock(self->serverMutex);
     require(!self->stopping&&!self->canceled(context.requestId)&&prompt.getNumBytesAsUTF8()<=7000,"Assistant request is canceled or excessive.");
     require(context.first>=0&&context.last>context.first&&context.last+context.alignment<=int64_t(context.sampleRate*30)&&context.alignment==((context.parameters.drive&&context.parameters.oversampling>1)?32:0),"Assistant selection exceeds its processing budget or alignment differs.");
     require(fileHash(context.sourceFile)==context.sourceHash,"Source changed before the assistant request.");
@@ -253,12 +254,12 @@ public:
      require(context.rawWet&&context.first>=context.cacheOffset&&context.last-context.cacheOffset+context.alignment<=context.rawWet->frames(),"Assistant baseline is outside its exact native cache.");
      tonescope::AudioData baseline;baseline.sampleRate=context.sampleRate;baseline.samples.resize(context.rawWet->samples.size());
      for(size_t c=0;c<baseline.samples.size();++c){require(!self->stopping,"Assistant is stopping.");const auto& input=context.rawWet->samples[c];baseline.samples[c].assign(input.begin()+context.first-context.cacheOffset+context.alignment,input.begin()+context.last-context.cacheOffset+context.alignment);}
-     auto baselineFile=self->privateDirectory.getChildFile("baseline-"+context.requestId+".wav");tonescope::writeWav(baselineFile.getFullPathName().toStdString(),baseline);protectPrivate(baselineFile);
+     auto baselineFile=self->privateDirectory.getChildFile("baseline-current.wav");tonescope::writeWav(baselineFile.getFullPathName().toStdString(),baseline);protectPrivate(baselineFile);
      auto manifest=object({{"schema_version",1},{"frames",(juce::int64)baseline.frames()},{"channels",(int)baseline.samples.size()},{"sample_rate_hz",baseline.sampleRate},{"source_sha256",context.sourceHash},{"artifact_sha256",fileHash(baselineFile)},{"graph_sha256",context.graphHash},{"selection_samples",context.selection()},{"processed_frames",(juce::int64)(context.last+context.alignment)},{"alignment_samples",context.alignment}});
      atomicJson(baselineFile.getSiblingFile(baselineFile.getFileName()+".json"),manifest);asset.getDynamicObject()->setProperty("baseline_path",baselineFile.getFullPathName());
     }
     auto registry=object({{"executable",self->cli.getFullPathName()},{"work_directory",self->previewDirectory().getFullPathName()},{"state_directory",self->historyDirectory.getFullPathName()},{"port",0},{"assets",juce::var(juce::Array<juce::var>{asset})}});
-    std::unique_lock serverLock(self->serverMutex);require(!self->canceled(context.requestId),"Assistant request was canceled.");atomicJson(self->manifestFile,registry);self->startServer();require(!self->canceled(context.requestId),"Assistant request was canceled.");
+    require(!self->canceled(context.requestId),"Assistant request was canceled.");atomicJson(self->manifestFile,registry);self->startServer();require(!self->canceled(context.requestId),"Assistant request was canceled.");
     auto request=object({{"schema_version",1},{"request_id",context.requestId},{"session_id",context.sessionId},{"prompt",prompt}});
     require(juce::JSON::toString(request,true).getNumBytesAsUTF8()<=8192,"Assistant request exceeds eight KiB.");
     auto response=self->http("POST","/v1/request",request);complete(response,{});

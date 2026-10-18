@@ -2,16 +2,16 @@
   "schema_version": 1,
   "product": "ToneScope",
   "version": "0.1.0-dev",
-  "overall_status": "incomplete_development_build",
+  "overall_status": "development_integration_final_verification",
   "production_ready": false,
   "source_state": {
     "integration_branch": "codex/delivery-orchestration",
     "merged_private_prs": [
       1,
-      2
+      2,
+      3
     ],
     "open_private_prs": [
-      3,
       4
     ],
     "final_clean_head_evidence_pending": true,
@@ -19,14 +19,15 @@
   },
   "requirements": {
     "TS-001": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
         "Validated PCM16/24/32 and float32 WAV import",
-        "Bounded 2 GiB/two-hour CLI streaming and persistent capture"
+        "Bounded 2 GiB/two-hour CLI streaming and persistent capture",
+        "Bounded desktop full-source metadata, history-preserving <=10s inspection and background replay",
+        "Deep Unicode Windows path and sidecar regressions"
       ],
       "remaining": [
-        "Desktop long-file inspection/playback integration under active isolated implementation",
-        "Broader malformed-file corpus"
+        "Broader licensed/adversarial input qualification"
       ]
     },
     "TS-002": {
@@ -39,13 +40,13 @@
       ]
     },
     "TS-003": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
         "Play/pause/seek/loop",
-        "Bounded background persistent dry recording, overflow/incomplete status and explicit recovery"
+        "Bounded background persistent dry recording, overflow/incomplete status and explicit recovery",
+        "Bounded worker-resampled long-file replay and absolute source timeline"
       ],
       "remaining": [
-        "Desktop long-file replay integration",
         "Physical device/disk fault qualification"
       ]
     },
@@ -56,7 +57,6 @@
         "1x/2x/4x drive, per-stage bypass and independent response/timing/alias gates"
       ],
       "remaining": [
-        "Final integrated clean-head evidence",
         "Physical callback budget and listening qualification"
       ]
     },
@@ -77,7 +77,7 @@
         "Time selection and identical full-history frequency-band audition filters"
       ],
       "remaining": [
-        "Final embedded interaction verification"
+        "Physical transition/listening qualification"
       ]
     },
     "TS-007": {
@@ -87,27 +87,27 @@
         "Known correct delay null and incorrect delay non-null regressions"
       ],
       "remaining": [
-        "Final clean-head evidence and listening qualification"
+        "Human listening qualification"
       ]
     },
     "TS-008": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
         "Measured waveforms, stereo-energy spectrum and RMS envelopes",
-        "Library actual overall/per-band compressor reduction timeline"
+        "Library actual overall/per-band compressor reduction timeline",
+        "Measured overall/per-band gain reduction, paired bounded source positions and full-history energy checkpoints"
       ],
       "remaining": [
-        "Timeline frontend integration in progress",
         "Physical transport/drop qualification"
       ]
     },
     "TS-009": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "Library manual soft/hard passage RMS, sample peak, crest, contrast and explicitly available envelope crossing measures"
+        "Library manual soft/hard passage RMS, sample peak, crest, contrast and explicitly available envelope crossing measures",
+        "Native/React manual soft/hard passage marks, exact measurements and revision-gated results"
       ],
       "remaining": [
-        "Native and React manual-passage UI integration in progress",
         "Human musical usefulness study"
       ]
     },
@@ -118,7 +118,6 @@
         "Phase-compensated LR4 three-band compression with independent detectors"
       ],
       "remaining": [
-        "Final integrated evidence",
         "Hardware timing/listening qualification"
       ]
     },
@@ -130,51 +129,52 @@
         "Persistent captures, interrupted-take recovery and bounded parameter transaction undo"
       ],
       "remaining": [
-        "Final integrated recovery workflow checks"
+        "Physical interrupted-write/device qualification"
       ]
     },
     "TS-012": {
       "status": "implemented_unqualified",
       "implemented": [
         "Native and web keyboard commands, named controls, numeric entries and undo/redo",
-        "200% text scaling, forced colors, reduced-motion software checks"
+        "200% text scaling, forced colors, reduced-motion software checks",
+        "Actual embedded assistant/passages/control/undo interaction checks"
       ],
       "remaining": [
-        "Narrator, mixed-DPI and human accessibility qualification",
-        "Final embedded full-workflow rerun"
+        "Narrator, mixed-DPI and human accessibility qualification"
       ]
     },
     "TS-013": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
         "Bounded native full/selected exports with canonical graph/source/artifact hashes",
         "Exclusive concurrent output publication",
-        "Raw desktop exports exclude audition filtering and match/monitor gain"
+        "Raw desktop exports exclude audition filtering and match/monitor gain",
+        "Reviewed streamed desktop export, output reservation and no-replace sidecar evidence"
       ],
       "remaining": [
-        "Final streaming desktop export integration",
-        "Package-linked comparison dossier"
+        "Physical disk-fault qualification"
       ]
     },
     "TS-014": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "Software packaging/installer/uninstaller/rollback and redacted diagnostics under isolated implementation"
+        "Software packaging/installer/uninstaller/rollback and redacted diagnostics under isolated implementation",
+        "Verified allowlist packaging with exact executable hashes, versioned install/rollback/uninstall and redacted diagnostics"
       ],
       "remaining": [
-        "Final package integration and verification",
-        "Signing, licensing selection and clean-machine qualification"
+        "Signing, JUCE licensing selection and clean-machine qualification"
       ]
     },
     "TS-015": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
         "Optional offline rules baseline and actual native candidate renderer",
         "Bounded typed tools, authenticated loopback broker and stale/hash/forgery gates",
-        "Dormant consent/budget-gated Gateway adapter and actual SDK mock protocol tests"
+        "Dormant consent/budget-gated Gateway adapter and actual SDK mock protocol tests",
+        "Actual native authenticated proposal/preview, frozen RMS A/B, explicit Apply and one-step undo",
+        "Bounded request admission and history/asset retention"
       ],
       "remaining": [
-        "Native authenticated preview/apply integration under active implementation",
         "Provider-backed corpus/model quality and human preference qualification"
       ]
     },
@@ -187,17 +187,17 @@
         "Compiled source identity and Windows/Linux sanitizer CI"
       ],
       "remaining": [
-        "Final clean integrated commit evidence",
         "Hardware, human, licensed/sequestered corpus and live-model qualification"
       ]
     }
   },
   "verification": {
-    "scope": "Intermediate development integration; final clean-head build/evaluations pending",
+    "scope": "Software implementation integrated; final clean-head build, mutation campaigns, independent review and CI in progress",
     "native_ctest_last_pass": {
-      "pass": 3,
+      "pass": 5,
       "fail": 0,
-      "log": ".tools/state-ctest.log"
+      "log": ".tools/profile-ctest.log",
+      "scope": "Intermediate integrated build; final clean commit rerun required"
     },
     "python_last_pass": {
       "pass": 32,
@@ -222,7 +222,9 @@
     },
     "embedded_native_probe": "artifacts/frontend-native/probe.json",
     "accessibility_software": "artifacts/frontend-native/accessibility-software.json",
-    "portable_sanitizers_ci": "Passed on PR4 initial head; rerun on final integration required"
+    "portable_sanitizers_ci": "Passed on PR4 initial head; rerun on final integration required",
+    "long_file_embedded_probe": ".worktrees/native-state/artifacts/frontend-native-long-file/probe.json",
+    "callback_probe": "docs/transport/callback-probe-benchmark.json (host microbenchmark only)"
   },
   "external_blockers": [
     "Physical interface/laptop lifecycle, timing and soak qualification",
@@ -232,15 +234,12 @@
     "Optional provider credentials, consent and budget for live D3 evaluation"
   ],
   "software_next": [
-    "Integrate long-file desktop playback/inspection and streaming exports",
-    "Integrate native authenticated assistant preview/apply/undo",
-    "Wire actual gain-reduction timeline and manual passage comparison UI",
-    "Review package/installer/diagnostics and rebuild final package",
-    "Run final clean-head native/frontend/service/evaluation/CI gates"
+    "Finish three actual product mutation campaigns and resource-limit independent review",
+    "Final clean-head native/frontend/service/evaluation gates and exact-head CI",
+    "Build/hash-verify private package and finish reviewed PR4"
   ],
   "limitations": [
     "Development integration is not production-qualified; final clean-head evidence pending",
-    "Desktop long-file changes are still isolated until verified integration",
     "RMS and sample peak are not perceptual loudness or true peak",
     "Integer delay compensation does not remove frequency-dependent filter phase",
     "Linear monitor resampling still needs physical/listening qualification",

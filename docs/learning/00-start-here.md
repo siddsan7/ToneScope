@@ -15,7 +15,7 @@ This guide describes the development build. Planned production features are iden
 | Samples and dBFS | Increase output by 6 dB | Approximately twice the sample amplitude before guarding; RMS rises 6 dB | `Engine.cpp` gain conversion; sample peak is not true peak |
 | Filters and phase | Set mid EQ +6 dB, play 1 kHz sine | Center grows; measure steady RMS ratio | Native bell test; FFT magnitude does not describe phase |
 | Compressor curve | Threshold -18, ratio 4, long steady input above threshold | Output grows more slowly; measure gain reduction after settling | Independent `compressor_gain_db` oracle; no hidden auto makeup |
-| Attack/release | Lengthen attack, then release on stepped audio | Transients pass differently; inspect envelope offline | Detector has fixed 10 ms power integration plus gain smoothing; timing qualification pending |
+| Attack/release | Lengthen attack, then release on stepped audio | Transients pass differently; inspect measured envelope and GR timeline | Detector has fixed 10 ms power integration plus gain smoothing; independent numerical crossing gates pass, while device/listening qualification remains open |
 | Harmonics | Enable drive on a clean sine | Additional harmonics and changed timbre | Faust `tanh` stage; nonlinear output is level dependent |
 | Aliasing | Sweep a high-frequency sine with drive | Folded components may appear | Compare 1x/2x/4x drive; the independent fixed alias fixtures pass, while musical preference still needs listening |
 | Latency/buffering | Change device buffer while stopped | Responsiveness/dropout tradeoff depends on device | Device buffer frames/rate is a period, not loopback latency; hardware test required |

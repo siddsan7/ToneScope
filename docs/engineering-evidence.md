@@ -37,7 +37,7 @@ The audio callback performs no file/network access, JSON parsing or model work. 
 
 ## Review history
 
-Private PRs [#1](https://github.com/siddsan7/ToneScope/pull/1), [#2](https://github.com/siddsan7/ToneScope/pull/2) and [#3](https://github.com/siddsan7/ToneScope/pull/3) passed independent agent review and exact-head Windows CI before merge. [#4](https://github.com/siddsan7/ToneScope/pull/4) integrates the embedded frontend and subsequent native/service/package work and remains a draft until its final review and checks finish. Agent review is identified as such; no human approval is impersonated.
+Private PRs [#1](https://github.com/siddsan7/ToneScope/pull/1), [#2](https://github.com/siddsan7/ToneScope/pull/2) and [#3](https://github.com/siddsan7/ToneScope/pull/3) passed independent agent review and exact-head Windows CI before merge. [#4](https://github.com/siddsan7/ToneScope/pull/4) integrates the embedded frontend and subsequent native/service/package work ; its live status, exact-head checks and independent review comments record the delivery gate. Agent review is identified as such; no human approval is impersonated.
 
 Independent reviews produced concrete regressions: low-rate initialization, extreme signed interval rejection, concurrent output publication, exact SDK selection, deep Windows Unicode paths, rollback version identity and reparse ancestry. Initial failures remain in the development evidence directories. Gates are not weakened to hide a failing implementation.
 
