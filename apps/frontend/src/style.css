@@ -331,7 +331,8 @@ main {
   gap: 9px;
 }
 .spectrum-scale {
-  width: 23px;
+  width: 3.2em;
+  flex-shrink: 0;
   font:
     0.84615rem Commit,
     Consolas,
@@ -343,7 +344,9 @@ main {
 }
 .spectrum svg {
   height: 100%;
-  width: calc(100% - 32px);
+  flex: 1;
+  min-width: 0;
+  width: 0;
   overflow: visible;
 }
 .dry-spectrum {
@@ -653,14 +656,14 @@ button[data-state="checked"] {
   background: #b6d9c0;
 }
 [role="switch"] {
-  min-height: 20px;
-  height: 20px;
-  min-width: 34px;
-  width: 34px;
+  min-height: 1.53846rem;
+  height: 1.53846rem;
+  min-width: 2.61538rem;
+  width: 2.61538rem;
 }
 [role="switch"] > span {
-  height: 16px;
-  width: 16px;
+  height: 1.23077rem;
+  width: 1.23077rem;
 }
 input[disabled],
 button[disabled] {
@@ -916,6 +919,15 @@ button:active {
 .text-scale select { min-width: 5rem; }
 .app-header, footer { min-height: fit-content; flex-wrap: wrap; gap: 12px; padding-block: 16px; }
 .file-actions, .live-controls { flex-wrap: wrap; }
+.passage-compare { margin: 24px 0; padding: 20px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-secondary); }
+.passage-compare h3 { margin-bottom: 8px; }
+.passage-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 18px 0; }
+.passage-actions span, .passage-table td { font-family: Commit, Consolas, monospace; }
+.passage-table { overflow-x: auto; margin: 16px 0; }
+.passage-table table { border-collapse: collapse; width: 100%; }
+.passage-table caption { text-align: start; margin-bottom: 10px; }
+.passage-table th, .passage-table td { text-align: start; padding: 10px; border-bottom: 1px solid var(--color-border); }
+.passage-table p { margin-top: 12px; }
 :root[data-large-text="true"] .app { height: auto; overflow: visible; }
 :root[data-large-text="true"] .workspace { display: block; }
 :root[data-large-text="true"] main, :root[data-large-text="true"] aside { overflow: visible; }

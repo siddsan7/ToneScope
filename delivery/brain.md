@@ -1,47 +1,40 @@
 # ToneScope working context
 
-## Active continuation (supersedes historical delivery notes below)
-User explicitly requested completion through genuine external blockers, production PR push/review/merge workflow, rigorous project-specific DSP/AI evaluation, and a dark React/shadcn frontend embedded in the native app (architecture confirmed).
+Read this first; load only the relevant API/spec/task afterward. Full specification: `docs/memory/implementation-plan.md`. This brain is working state, not release evidence. Historical states are retained in Git.
 
-Foundation PR #1 and exact-head DSP PR #2 are merged after independent agent review and passing Windows CI. Main checkout `codex/delivery-orchestration` integrates DSP, streaming CLI, React frontend, hardened evaluations and the optional assistant service. Integration is ongoing; this is not a qualified release. Detailed historical notes below describe an earlier baseline and are superseded by this section.
+## Goal and constraints
+Complete the Windows effects engine/audio microscope and separately gated assistant, with recruiter-reviewable PR history and project-specific independent evaluations. User confirmed dark React/shadcn embedded inside native JUCE, preserving C++ audio. Apple design/motion principles apply; Free Faces fonts are locally licensed. Root orchestrates; bounded agents use isolated worktrees and concise task context. Merges require independent review and exact-head CI. No public release or paid provider calls are authorized by development work.
 
-Active isolated work, with minimal task-specific context:
-- `.worktrees/assistant`, `codex/audio-assistant`: service committed ab58b909; native AssistantBridge.h/AssistantIntegration.inc connection next. Offline rules by default, real native candidate rendering; dormant metered opt-in Gateway adapter; no paid calls made.
-- `.worktrees/native-state`, `codex/native-state-transport`: Main.cpp, persistent background dry capture, raw export separated from audition, recovery, undo/redo and assistant lifecycle hooks. Compiling before handoff.
-- Read-only integration reviewer: concurrent export publication, exact WebView2 dependency pin, integration validation. Found race and SDK pin bypass; fixes pending verification.
-- Orchestrator: shared contracts, bounded streaming CLI, CMake/CI, PR integration and final evidence. No overlapping writer paths.
-- Frozen completed workers: `.worktrees/dsp-next` head4aa4489 (merged PR2); `.worktrees/evaluation-next` headb6833a9 (evaluation PR pending); `.worktrees/frontend` headaa4dfb3 (integrated, embedded build pending).
+## Delivery state
+Private GitHub `siddsan7/ToneScope`. Foundation PR1 and DSP PR2 merged after independent agent review and Windows CI. PR3 (evaluation + required streaming/latency contracts) exact head20a99b2 has both CI runs passing; independent exact-composition review pending. PR4 integration draft includes frontend/service/streaming; first CI caught bridge compile error, fixed in integrated3e2e714; final push/review/CI pending. Root branch `codex/delivery-orchestration`.
 
-Current root build session3054 compiles the actual embedded WebView2 frontend. Avoid editing native sources while compiling. CLI streaming/selection, exact processing history and atomic no-clobber publication are being verified. Pending SDK fix: explicitly force WebView2_root_dir to pinned NuGet directory; JUCE otherwise selects the first matching package/cache. Remaining software includes native assistant wiring, long-file desktop inspection, full accessibility/keyboard/device handling, packaging and final clean-head evidence. Do not label software work as external qualification.
+Integrated commits include native state/capture3e2e714, Faust kernels5f08ee1, dynamics APIs641cf1d, accessibility/provenance50a71bc and packagingbc1413c. New frontend manual-passage UI/MicroscopeIntegration.inc and progress updates are uncommitted pending native hook integration. Do not reset them.
 
-Evaluation: independent EQ/comp timing/crossover/alias oracles, immutable grouped regression inventory, adversarial proposal graders, exact-source/runtime release evidence. Latest evaluator worker run31 Python tests, contracts10, DSP12, integration7 passed against integrated CLI. These are development evidence, not clean-final-commit release evidence. Nine fixed alias fixtures improved18.55–26.32dB; this bounded result is not a universal audio-quality claim. Service18 tests and frontend5 tests passed in worker contexts; integrated reruns required.
+## Current implementation
+- C++20/MSVC19.44, JUCE9.0.4 exact3fb5cbc, Faust2.88.0; versions/hashes in dependencies.lock.json. Real WebView2 SDK1.0.3485.44 archive pinned and exact cache path forced (wildcard lookup bypass fixed).
+- Actual generated Faust compressor, RBJ EQ coefficients/biquads and tanh execute in Engine. Host owns scheduling, smoothing, crossovers/resampling and surrounding drive filters. Quality1x/2x/4x; 2x/4x drive declares32 source samples pure delay; phase is still frequency dependent. Compensated LR4 three-band compressor has independent linked detectors.
+- Bounded WAV CLI supports2GiB/two hours. Explicit selected export processes source history from0 then compensates pure delay, including EOF zero flush. Canonical graph hash uses actual native values. Concurrent publication reserves both destinations and publishes without replacement unless --overwrite. Two-step audio/manifest can leave complete audio if sidecar fails.
+- Native persistent dry capture has fixed1MiB queue/background disk writer, overflow/incomplete recovery, atomic session snapshots, strict schema1 migration, verified relocation and bounded whole-patch undo. Desktop raw export excludes band/match/monitor transforms.
+- React/shadcn/Radix +Motion dark instrument UI is embedded and compiled. Space Grotesk/Commit Mono load from bundled OFL assets. Native allowlist/local resources/CSP protect bridge. 200% text, forced-colors and reduced-motion software checks passed; Narrator/human checks remain external.
+- Assistant service: offline RulesProvider default, typed bounded tools, actual native candidate renders, authenticated loopback broker, stale/hash/forgery/cancel gates, separate redacted history. Dormant Gateway adapter uses real SDK with explicit opt-in/model/pricing/token/cumulative-currency gates; no live calls made. Native client/preview/explicit apply integration is being finished.
+- Dynamics library: renderWithDynamics preserves exact rendered samples, records actual overall/per-band GR; comparePassages reports explicit manual soft/hard RMS/peak/crest/contrast and available full-history envelope crossings. No onset/perceptual claims.
 
-Approved additive Parameters API: int `oversampling=1`, bool `multiband=false`, `crossoverLowHz=200`, `crossoverHighHz=2000`; root updates schemas/loader/CLI when DSP head is ready. Analysis helpers are documented in worker handoff; positive latency aligns wet[n+latency] to dry[n]. Live paid model calls remain disabled without explicit consent and configured budget.
+## Active isolated ownership
+- `.worktrees/native-state`, native_state_delivery: Main.cpp, FilePlayback/streaming inspection helpers and transport tests. Long-file metadata/absolute timeline, <=10s bounded inspection, full-history processing, exact entire-selection metrics, worker-resampled playback ring and streaming export. Also owns WebFrontend.inc snapshot offsets, actual streamGR and guarded MicroscopeIntegration hooks. Root will wire short renderWithDynamics afterward. --source launch added for real UI tests.
+- `.worktrees/assistant`, assistant_delivery: new AssistantBridge.h/AssistantIntegration.inc and nativehelper test, service host ready-file handshake. Actual1x protocol passed; investigating2x native_cli_failed regression. Persistent private history and cryptographic capability; Node24 optional. Prefers bin/assistant/host.mjs then dev TS entry. Root must add CMake assistant test/link dependencies when handed off.
+- integration_review: exact PR3 composition approval first; packaging369a067 security review next. Read-only.
+- Root owns frontend TSX/CSS, MicroscopeIntegration.inc, CMake/CI/contracts/provenance, integration and final verification. No overlapping root Main edits until worker handoff.
 
-Read this first on resume. Load only the relevant contract, task and specification section afterward.
+## Verification and commands
+Intermediate evidence only: native CTest3/3; Python32/32 zero skips in `.tools/provenance-python-required.log`; assistant19/19 zero skips (sandbox denied loopback first, escalated rerun passed, failure retained); frontend5/5; independent Faust-integrated DSP12/12; contracts10/10. Nine alias fixtures improved18.55–26.32dB against converged independent reference, not universal quality.
+Actual native UI probe `tests/ui/embedded-native.mjs`: ToneScope --demo --web-ui-test --web-debug-port9337; proved measured waveform/spectrum, valid parameter, invalid rejection, native undo, font loading,200% scaling/media. Evidence `artifacts/frontend-native/`. Native test process50220 may still run; verify executable path before stopping it for rebuild. Test process opens no audio hardware.
+Build `.tools/python/cmake/data/bin/cmake.exe --build --preset windows-dev -- /m:1 /nr:false`; CTest corresponding preset. CLI build-info embeds source/commit/compiler/dependency identities; final clean build is mandatory. Evaluate `python evals/run.py --cli <exe> --suite contracts|dsp|integration --output <freshdir>`. AI-replay development is protocol baseline, not model qualification. Python native assistant env TONESCOPE_ASSISTANT_RUNTIME must be service DIRECTORY, not service.ts; CI sets REQUIRE_NATIVE_TESTS=1 so missing runtime fails instead of skips.
 
-## Goal and acceptance
-Build the native Windows effects engine/audio microscope specified in `docs/memory/implementation-plan.md`: D1, then D2, optional separately gated D3. A working development executable exists; the full plan is **not complete**. See `progress.json` for feature-level remaining work. Do not infer production readiness from passing development tests.
+## Next actions
+1. Complete native long-file and assistant handoffs; resolve helper failures, integrate and compile actual WebView app. Add required native test targets.
+2. Wire actual short-file GR timeline and microscope hooks, finish source-time UI mapping, test manual passage flow and real assistant preview/apply/undo in embedded app.
+3. Independently review new native integrations and packaging; merge PR3 after approval; update PR4 body around final scope and push.
+4. Run final clean-head native/frontend/service/eval/sanitizer CI, retained failed artifacts, rebundle latest broker, verify private ZIP and versioned install tests. Link source/runtime/package identities; update progress and compact brain.
 
-## Integrated state
-- C++20/MSVC native JUCE desktop and headless renderer compile. Pinned JUCE/Faust/CMake in `dependencies.lock.json`; generated Faust tanh graph is actually used. Compressor/EQ and host filters remain authored C++.
-- Desktop: import, transport/selection/loop, explicit live monitoring, bounded dry capture/replay, effects controls/order, cached waveform/stereo-energy FFT, frozen RMS match/raw and matched residual, strict file sessions/source digest checks, float export/evidence. Desktop file limit 100 MiB/120 s; core decoder 256 MiB. Drive is 1x. Default host/test rates 44.1/48/96 kHz.
-- Shared API `libs/audio-engine/include/tonescope/Engine.h`; shared strict session loader `libs/session/include/tonescope/Session.h`. Processing thread owns DSP zones/state. Noexcept real-time setter retains valid state on rejection. UI publishes fixed snapshots. Full renders carry revision gates; invalid/new sources cannot export an old render.
-- Frontend uses apple-look/apple-motion principles translated to Windows JUCE. Native synthetic offline snapshot: `artifacts/ui/desktop-final.png`; no device was opened by that smoke mode. Source screenshot invocation: `ToneScope.exe --demo --screenshot <absolute.png>`.
-
-## Verification and review
-Windows Release build passed; native CTest 1/1; Python tests 15/15; independent contracts 9/9 and integration 6/6; DSP 7 passed with required advanced qualification blocked. Faust source-to-generated drift check passed. AI suites correctly blocked. Evidence index: `progress.json`, raw suites under `artifacts/`, report `artifacts/report.html`. Tests include anti-phase stereo, allocation-free invalid real-time controls, Unicode paths, source digest mismatch, UI coercion and sidecar protection. Agent reviews and fixes: `review.md`.
-
-No commit/merge/push/deployment/public release occurred. Exact binary hashes and dirty-source state are recorded. MSVC generated/precision-conversion warnings remain. A repeated evaluator run initially failed because existing evaluator-owned outputs were protected; its explicit overwrite fix was independently reviewed, and the failed summary is retained at `artifacts/integration/run-before-rerun-fix.json`. Dedicated no-clobber tests remain intact.
-
-## Immediate concerns / next implementation
-1. Complete bounded streaming and persistent dry takes, then transport/device fault/overflow/recovery cases. Live dry reference currently precedes trim; file analytical dry uses identical ingress clamp and trim. Match those live semantics before claiming full TS-005.
-2. Add identical-branch frequency audition, envelopes/dynamics, oversampling and phase-correct three-band processing with independent response/timing/alias/phase references. Missing software remains planned, not disguised as an external blocker.
-3. Finish undo, complete keyboard commands, high-contrast/scaling/Narrator behavior, source recovery/migrations and installer clean-machine workflows.
-4. Implement D3 tools/service/UI/benchmarks only after stable session/preview contracts; no live paid provider without opt-in and configured budget.
-
-## External qualification
-Physical interface/laptop timing/lifecycle/soak, licensed DI corpus, human listening/accessibility participants, distribution licensing choice, signing and clean-machine qualification remain unavailable/unperformed. Never mark them passed from mocks. Local ZIP is an unqualified development bundle; release-check must reject missing evidence.
-
-## Context/ownership workflow
-Main orchestrator owns dependency DAG, shared contracts, integration and final evidence. Bounded workers use isolated `.worktrees/` with path ownership and `fork_turns=none`: task/API/relevant plan sections/acceptance only. Current workers are finished; their integrated fixes live in root. Keep full historical material in durable memory, update this compact brain after integration, and use a fresh reviewer context for substantive changes. Do not dump complete conversation history into new workers.
+## Genuine external qualification
+Physical Windows device lifecycle/callback timing/round-trip/soak; licensed musical corpus and independently owned sequestered holdout; human listening/Narrator/mixed-DPI/accessibility; JUCE distribution route/notices approval; signing identity and clean-machine qualification; explicit priced provider-backed model evaluation. Never substitute mocks/protocol regressions for these. Software integration above is still active, not an external blocker.

@@ -22,7 +22,7 @@ var object(std::initializer_list<std::pair<const char*, var>> fields) {
 }
 void print(const var& value) { std::cout << JSON::toString(value, true).toStdString() << '\n'; }
 String hashFile(const File& f) {
-    auto stream = f.createInputStream();
+    auto stream = session::fileForIo(f).createInputStream();
     if (!stream) throw std::runtime_error("Cannot hash file");
     return SHA256(*stream).toHexString();
 }
@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
             auto c=compareAligned(dry,wet,start,end,args.contains("--match"),latency);
             print(object({{"valid",c.valid},{"dryRms",c.dryRms},{"wetRms",c.wetRms},{"gain",c.gain},{"residualRms",c.residualRms},{"peak",c.peak},{"gainCapped",c.gainCapped},{"selection_start",start},{"selection_end",end},{"latency_samples",latency}}));
         } else {
-            File source=File::getCurrentWorkingDirectory().getChildFile(String::fromUTF8(required("--source").c_str()));
+            File source=session::fileForIo(File::getCurrentWorkingDirectory().getChildFile(String::fromUTF8(required("--source").c_str())));
             const auto sourceHash=hashFile(source);
             WavStreamReader reader(source.getFullPathName().toStdString());
             const auto info=reader.info();
@@ -82,16 +82,16 @@ int main(int argc, char** argv) {
                 if(hashFile(source)!=sourceHash)throw std::runtime_error("Source changed during inspection");
                 print(object({{"frames",int64(info.frames)},{"channels",info.channels},{"sample_rate_hz",info.sampleRate},{"rms",count?std::sqrt(energy/count):0},{"peak",peak}}));
             } else {
-                auto p=args.contains("--session")?loadParameters(File::getCurrentWorkingDirectory().getChildFile(String::fromUTF8(args.at("--session").c_str()))):Parameters{};
+                auto p=args.contains("--session")?loadParameters(session::fileForIo(File::getCurrentWorkingDirectory().getChildFile(String::fromUTF8(args.at("--session").c_str())))):Parameters{};
                 if(args.contains("--session")) {
-                    auto saved=JSON::parse(File::getCurrentWorkingDirectory().getChildFile(String::fromUTF8(args.at("--session").c_str())));
+                    auto saved=JSON::parse(session::fileForIo(File::getCurrentWorkingDirectory().getChildFile(String::fromUTF8(args.at("--session").c_str()))));
                     if(auto digest=saved["source_sha256"]; !digest.isVoid() && digest.toString()!=sourceHash) throw std::runtime_error("Session source digest differs from supplied source");
                 }
                 std::string error;
                 if(!validate(p,info.sampleRate,error)) throw std::runtime_error(error);
                 int block=integer(args,"--block-size",257);
                 if(block<1 || block>65536) throw std::runtime_error("Block size must be 1..65536");
-                File out=File::getCurrentWorkingDirectory().getChildFile(String::fromUTF8(required("--out").c_str()));
+                File out=session::fileForIo(File::getCurrentWorkingDirectory().getChildFile(String::fromUTF8(required("--out").c_str())));
                 const auto sidecar=out.getSiblingFile(out.getFileName()+".json");
                 if(out==source || sidecar==source) throw std::runtime_error("Output must differ from source");
                 session::PublicationReservation publication(out,sidecar);

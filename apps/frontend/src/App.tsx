@@ -21,6 +21,7 @@ import {
   Headphones,
 } from "lucide-react";
 import { Button } from "./components/ui/button";
+import { PassageCompare } from "./components/PassageCompare";
 import { Slider } from "./components/ui/slider";
 import { Switch } from "./components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
@@ -90,6 +91,7 @@ export default function App() {
     [panel, setPanel] = useState("chain"),
     [analysis, setAnalysis] = useState("spectrum"),
     [prompt, setPrompt] = useState(""),
+    [dragSelection, setDragSelection] = useState<number[] | null>(null),
     [textScale, setTextScale] = useState(100);
   useEffect(() => {
     document.documentElement.style.fontSize = `${13 * textScale / 100}px`;
@@ -161,6 +163,13 @@ export default function App() {
   const controls = model?.controls ?? [],
     sel = model?.selection ?? [0, 1],
     duration = model?.duration ?? 0;
+  const sourceFrames = model?.sourceFrames || duration * (model?.sampleRate ?? 48000);
+  const windowFrom = (model?.inspectionOffset ?? 0) / Math.max(1, sourceFrames);
+  const windowTo = (model?.inspectionEnd ?? sourceFrames) / Math.max(1, sourceFrames);
+  const windowSpan = Math.max(1 / Math.max(1,sourceFrames), windowTo - windowFrom);
+  const visibleSelection = dragSelection ?? sel.map(value => Math.max(0,Math.min(1,(value-windowFrom)/windowSpan)));
+  const visiblePosition = ((model?.position ?? 0)-windowFrom)/windowSpan;
+  const windowTime = (fraction: number) => duration * (windowFrom + fraction * windowSpan);
   const change = (c: Control, v: number) =>
     void send("parameter", { key: c.key, value: v });
   return (
@@ -238,7 +247,7 @@ export default function App() {
                 <div>
                   <Waves size={17} />
                   <h3>Waveform</h3>
-                  <span className="scope-note">Drag to select a passage</span>
+                  <span className="scope-note">{model?.streamedSource ? `Measured window ${time(windowTime(0))}–${time(windowTime(1))}` : "Drag to select a passage"}</span>
                 </div>
                 <div className="legend">
                   <span className="dry">— Dry</span>
@@ -254,7 +263,17 @@ export default function App() {
                   e.currentTarget.dataset.anchor = String(
                     Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
                   );
+                  const point=Number(e.currentTarget.dataset.anchor);
+                  setDragSelection([point,point]);
                 }}
+                onPointerMove={(e) => {
+                  if(!e.currentTarget.hasPointerCapture(e.pointerId))return;
+                  const anchor=Number(e.currentTarget.dataset.anchor);
+                  const r=e.currentTarget.getBoundingClientRect();
+                  const point=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+                  setDragSelection([Math.min(anchor,point),Math.max(anchor,point)]);
+                }}
+                onPointerCancel={() => setDragSelection(null)}
                 onPointerUp={(e) => {
                   const a = Number(e.currentTarget.dataset.anchor);
                   if (!duration || !Number.isFinite(a)) return;
@@ -265,9 +284,10 @@ export default function App() {
                     );
                   if (Math.abs(a - b) > 0.002)
                     void send("selection", {
-                      from: Math.min(a, b),
-                      to: Math.max(a, b),
-                    });
+                      from: windowFrom + Math.min(a, b) * windowSpan,
+                      to: windowFrom + Math.max(a, b) * windowSpan,
+                    }).finally(() => setDragSelection(null));
+                  else setDragSelection(null);
                 }}
               >
                 <svg
@@ -300,9 +320,9 @@ export default function App() {
                   {duration > 0 && (
                     <>
                       <rect
-                        x={sel[0] * 1000}
+                        x={visibleSelection[0] * 1000}
                         y="0"
-                        width={(sel[1] - sel[0]) * 1000}
+                        width={(visibleSelection[1] - visibleSelection[0]) * 1000}
                         height="170"
                         className="selection"
                       />
@@ -314,13 +334,13 @@ export default function App() {
                         d={wavePath(model?.wetPeaks ?? [])}
                         className="wet-wave"
                       />
-                      <line
-                        x1={(model?.position ?? 0) * 1000}
-                        x2={(model?.position ?? 0) * 1000}
+                      {visiblePosition >= 0 && visiblePosition <= 1 && <line
+                        x1={visiblePosition * 1000}
+                        x2={visiblePosition * 1000}
                         y1="0"
                         y2="170"
                         className="playhead"
-                      />
+                      />}
                     </>
                   )}
                 </svg>
@@ -340,7 +360,7 @@ export default function App() {
               </div>
               <div className="axis">
                 {[0, 0.25, 0.5, 0.75, 1].map((v) => (
-                  <span key={v}>{time(duration * v)}</span>
+                  <span key={v}>{time(windowTime(v))}</span>
                 ))}
               </div>
               <div className="seek-row">
@@ -392,12 +412,12 @@ export default function App() {
                   <h3>
                     {analysis === "spectrum"
                       ? "Frequency spectrum"
-                      : "RMS envelope"}
+                      : analysis === "reduction" ? "Compressor gain reduction" : "RMS envelope"}
                   </h3>
                   <span className="scope-note">
                     {analysis === "spectrum"
                       ? "Selected passage · stereo energy"
-                      : "Full source · 10 ms detector"}
+                      : analysis === "reduction" ? "Actual DSP state · positive dB reduction" : "Measured window · 10 ms detector"}
                   </span>
                 </div>
                 <select
@@ -407,31 +427,32 @@ export default function App() {
                 >
                   <option value="spectrum">Spectrum / dBFS</option>
                   <option value="dynamics">Dynamics / dBFS</option>
+                  <option value="reduction">Gain reduction / dB</option>
                 </select>
               </div>
               <div className="spectrum">
                 <div className="spectrum-scale">
                   <span>0</span>
-                  <span>−50</span>
-                  <span>−100</span>
+                  <span>{analysis === "reduction" ? "12" : "−50"}</span>
+                  <span>{analysis === "reduction" ? "24" : "−100"}</span>
                 </div>
                 <svg
                   viewBox="0 0 1000 180"
                   preserveAspectRatio="none"
                   role="img"
-                  aria-label="Dry and processed frequency spectrum"
+                  aria-label={analysis === "reduction" ? "Measured compressor gain reduction" : analysis === "dynamics" ? "Dry and processed RMS envelopes" : "Dry and processed frequency spectrum"}
                 >
                   <path d="M0 0H1000M0 90H1000M0 179H1000" className="zero" />
-                  <path
+                  {analysis !== "reduction" && <path
                     d={spectrumPath(
                       (analysis === "spectrum"
                         ? model?.drySpectrum
                         : model?.dryEnvelope) ?? [],
                     )}
                     className="dry-spectrum"
-                  />
+                  />}
                   <path
-                    d={spectrumPath(
+                    d={analysis === "reduction" ? (model?.gainReductionHistory ?? []).map((value,i,values) => `${i ? "L" : "M"}${i / Math.max(1,values.length-1)*1000},${Math.min(24,Math.max(0,value))/24*180}`).join(" ") : spectrumPath(
                       (analysis === "spectrum"
                         ? model?.wetSpectrum
                         : model?.wetEnvelope) ?? [],
@@ -444,17 +465,18 @@ export default function App() {
                 {(analysis === "spectrum"
                   ? ["20 Hz", "100", "1k", "10k", "20k"]
                   : [
-                      time(0),
-                      time(duration * 0.25),
-                      time(duration * 0.5),
-                      time(duration * 0.75),
-                      time(duration),
+                      time(windowTime(0)),
+                      time(windowTime(0.25)),
+                      time(windowTime(0.5)),
+                      time(windowTime(0.75)),
+                      time(windowTime(1)),
                     ]
                 ).map((x) => (
                   <span key={x}>{x}</span>
                 ))}
               </div>
             </section>
+            <PassageCompare model={model} send={send} />
             <div className="comparison-row">
               <div>
                 <p className="eyebrow">LISTEN TO</p>

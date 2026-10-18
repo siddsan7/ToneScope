@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import shutil
 from pathlib import Path
 import struct
 import subprocess
@@ -45,6 +46,33 @@ class NativeBoundaryTests(unittest.TestCase):
             self.assertEqual(code, 0, value)
             self.assertAlmostEqual(value['rms'], .125)
             self.assertEqual(value['frames'], 2048)
+
+    def test_deep_unicode_output_and_sidecar_publication(self):
+        folder = self.root
+        for index in range(6):
+            folder = folder / (str(index) + "-" + "nested-session-" * 3)
+        def extended(path):
+            return Path('\\\\?\\' + str(path.resolve())) if os.name == 'nt' else path
+        def cleanup_deep_fixture():
+            target = self.root.resolve()
+            if not target.is_relative_to((ROOT / 'artifacts/test-tmp').resolve()):
+                raise RuntimeError('Refusing cleanup outside native test fixture root')
+            if extended(target).exists():
+                shutil.rmtree(extended(target))
+        self.addCleanup(cleanup_deep_fixture)
+        extended(folder).mkdir(parents=True)
+        target = folder / 'guitar-\U0001f3b8.wav'
+        self.assertGreater(len(str(target)), 300)
+        code, result = self.call('render', '--source', self.source, '--out', target, '--start', 100, '--end', 1900)
+        self.assertEqual(code, 0, result)
+        self.assertEqual(result['artifact_sha256'], hashlib.sha256(extended(target).read_bytes()).hexdigest())
+        self.assertEqual(json.loads(extended(Path(str(target)+'.json')).read_text())['frames'], 1800)
+        code, result = self.call('inspect', '--source', target)
+        self.assertEqual(code, 0, result)
+        self.assertEqual(result['frames'], 1800)
+        code, result = self.call('compare', '--dry', target, '--wet', target)
+        self.assertEqual(code, 0, result)
+        self.assertEqual(result['residualRms'], 0)
 
     def test_shared_ui_loader_rejects_coercion_and_unknown_fields(self):
         for ui in ({'rms_match': 'false'}, {'selection_start': '0'}, {'unknown': True}, None):

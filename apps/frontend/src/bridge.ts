@@ -20,6 +20,26 @@ export type AssistantState = {
   };
 };
 export type Snapshot = {
+  streamedSource?: boolean;
+  sourceFrames?: number;
+  inspectionOffset?: number;
+  inspectionEnd?: number;
+  gainReductionHistory?: number[];
+  bandGainReductionHistory?: number[][];
+  microscope?: {
+    soft?: number[];
+    hard?: number[];
+    current: boolean;
+    message: string;
+    measurements?: {
+      valid: boolean;
+      soft: PassageMetrics;
+      hard: PassageMetrics;
+      dryContrastDb?: number;
+      wetContrastDb?: number;
+      contrastChangeDb?: number;
+    };
+  };
   canUndo?: boolean;
   canRedo?: boolean;
   captureFinalizing?: boolean;
@@ -57,6 +77,8 @@ export type Snapshot = {
   drySpectrum: number[];
   wetSpectrum: number[];
 };
+export type PassageSignal = { rmsDbfs: number; peakDbfs: number; crestDb?: number; riseMs?: number; decayMs?: number };
+export type PassageMetrics = { dry: PassageSignal; wet: PassageSignal; changeDb?: number };
 type Backend = {
   addEventListener: (event: string, fn: (data: any) => void) => number;
   emitEvent: (event: string, data: unknown) => void;
