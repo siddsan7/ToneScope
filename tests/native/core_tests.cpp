@@ -22,6 +22,70 @@ namespace {void require(bool ok,const char* text){if(!ok)throw std::runtime_erro
 void put(std::ofstream& f,unsigned value,int bytes){for(int i=0;i<bytes;++i)f.put(char(value>>(8*i)));}
 void fixture(const std::filesystem::path& path,int format,int bits){std::ofstream f(path,std::ios::binary);int count=bits/8;int data=count*2;f.write("RIFF",4);put(f,36+data,4);f.write("WAVEfmt ",8);put(f,16,4);put(f,format,2);put(f,1,2);put(f,48000,4);put(f,48000*count,4);put(f,count,2);put(f,bits,2);f.write("data",4);put(f,data,4);put(f,0, count);unsigned v=bits==16?0xc000:bits==24?0xc00000:0xc0000000;put(f,v,count);}
 }
+void faustStageTests() {
+ // Independent scalar compressor definition, including soft-knee boundaries,
+ // detector decay, attack/release switching and ratio-one identity.
+ for(double sr:{44100.,48000.,96000.})for(double knee:{0.,6.,24.})for(double ratio:{1.,4.,20.}) {
+  double detector=0,reduction=0,referenceDetector=0,referenceReduction=0;
+  for(int n=0;n<6000;++n) {
+   const double level=n<2000?.02:n<4000?.8:0.;
+   const double energy=level*level,threshold=-24.,attack=.1,release=100.;
+   const double c=std::exp(-1/(.010*sr));
+   referenceDetector=c*referenceDetector+(1-c)*energy;
+   const double over=10*std::log10(std::max(referenceDetector,1e-30))-threshold,slope=1-1/ratio;
+   double target=0;
+   if(knee>0&&over>-knee/2&&over<knee/2)target=slope*(over+knee/2)*(over+knee/2)/(2*knee);
+   else if(over>=knee/2)target=slope*over;
+   const double ms=target>referenceReduction?attack:release,a=std::exp(-1/(ms*.001*sr));
+   referenceReduction=a*referenceReduction+(1-a)*target;
+   const double actual=detail::compressorStep(energy,detector,reduction,sr,threshold,ratio,attack,release,knee,0);
+   require(near(detector,referenceDetector,2e-13),"Faust RMS detector matches independent recurrence");
+   require(near(reduction,referenceReduction,2e-10),"Faust soft knee and ballistics match independent recurrence");
+   require(near(actual,std::pow(10.,-referenceReduction/20),2e-11),"Faust compressor gain matches independent recurrence");
+   if(ratio==1)require(actual==1,"Faust ratio-one exact identity");
+  }
+ }
+ // RBJ design invariants independently constrain gain and stability.
+ for(double sr:{44100.,48000.,96000.})for(int kind:{0,1,2})for(double db:{-18.,0.,18.})for(double q:{.2,1.,10.}) {
+  double b0,b1,b2,a1,a2;
+  const double hz=kind==0?120.:kind==1?1700.:6000.;
+  detail::eqCoefficients(kind,hz,q,db,sr,b0,b1,b2,a1,a2);
+  require(std::abs(a2)<1&&1+a1+a2>0&&1-a1+a2>0,"Faust EQ coefficient poles stay inside unit circle");
+  auto response=[&](double f) {
+   const auto z=std::polar(1.,-2*detail::pi*f/sr);
+   return std::abs((b0+b1*z+b2*z*z)/(1.+a1*z+a2*z*z));
+  };
+  const double target=std::pow(10.,db/20);
+  require(near(response(kind==0?0.:kind==1?hz:sr/2),target,2e-10),"Faust EQ prescribed shelf/center gain");
+  if(kind!=1)require(near(response(kind==0?sr/2:0.),1.,2e-10),"Faust EQ opposite shelf endpoint unity");
+ }
+ // Verify the generated filter consumes and returns the actual recursive state.
+ double z1=0,z2=0,reference1=0,reference2=0;
+ for(int n=0;n<10000;++n) {
+  const double x=std::sin(n*.73),y=.8*x+reference1;
+  reference1=.2*x-(-.3)*y+reference2;reference2=.1*x-.2*y;
+  const double actual=detail::biquadStep(x,z1,z2,.8,.2,.1,-.3,.2);
+  require(near(actual,y,2e-14)&&near(z1,reference1,2e-14)&&near(z2,reference2,2e-14),"Faust transposed biquad agrees with scalar state oracle");
+ }
+ auto source=sine(2048,997,.7f);
+ Parameters p;p.compressor=p.equalizer=true;p.thresholdDb=-24;p.ratio=4;p.kneeDb=6;p.lowDb=6;p.midDb=-4;p.highDb=3;
+ for(double sr:{44100.,48000.,96000.})for(bool multiband:{false,true}) {
+  source.sampleRate=sr;p.multiband=multiband;p.order={0,1,2};
+  do {
+   const auto expected=render(source,p,128);
+   for(int block:{1,17,63,257,512,1024})require(expected.samples==render(source,p,block).samples,"Faust EQ/compressor all orders are block invariant");
+  }while(std::next_permutation(p.order.begin(),p.order.end()));
+  Engine engine;engine.prepare(sr,2,p);
+  float left[257]{},right[257]{};const float* in[]={left,right};float* out[]={left,right};
+  allocationCount=0;trackAllocations=true;
+  engine.process(in,out,257);
+  auto changed=p;changed.lowDb=-8;changed.attackMs=40;
+  const bool accepted=engine.setParametersRealtime(changed);
+  engine.process(in,out,257);
+  trackAllocations=false;
+  require(accepted&&allocationCount==0,"Faust coefficient refresh and compressor callback allocate nothing");
+ }
+}
 void microscopeTests() {
  Parameters p;p.drive=true;
  auto source=sine(8192,997,.2f);
@@ -95,6 +159,7 @@ int main(){try {
 
  AudioData lowRate;lowRate.sampleRate=8000;lowRate.samples={{.125f,.25f,-.5f}};Parameters lowParams;lowParams.toneHz=3200;require(render(lowRate,lowParams).samples==lowRate.samples,"explicit valid low-rate configuration prepares without default-frequency rejection");
 
+ faustStageTests();
  microscopeTests();
  Parameters p;std::string error;require(validate(p,48000,error),"defaults valid");p.ratio=std::numeric_limits<float>::quiet_NaN();require(!validate(p,48000,error),"NaN rejected");p={};p.order={0,0,2};require(!validate(p,48000,error),"duplicate stage rejected");p={};p.midHz=20000;require(!validate(p,44100,error),"Nyquist parameter rejected");
  auto a=sine();p={};auto unity=render(a,p,17);require(unity.samples==a.samples,"unity identity");p.compressor=true;p.ratio=1;require(render(a,p,257).samples==a.samples,"ratio one identity");p.ratio=4;p.thresholdDb=-18;p.releaseMs=150;auto compressed=render(a,p,1);require(compressed.samples==render(a,p,257).samples,"block invariance");auto measurement=compare(a,compressed,72000,96000,false);require(measurement.valid,"compressor comparison");double gr=20*std::log10(measurement.dryRms/measurement.wetRms);require(gr>6.6&&gr<6.9,"linked RMS steady compressor oracle");require(compressed.samples[0][90001]==-compressed.samples[1][90001],"stereo link preserves polarity");
