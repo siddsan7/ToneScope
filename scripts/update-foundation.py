@@ -18,10 +18,13 @@ ranges = {
     'midDb':(-18,18,0,'dB'), 'highDb':(-18,18,0,'dB'),
     'midHz':(20,20000,1000,'Hz'), 'midQ':(.2,10,.707,'Q'),
     'driveDb':(0,36,6,'dB'), 'toneHz':(20,20000,5000,'Hz'),
-    'outputDb':(-24,24,0,'dB')
+    'outputDb':(-24,24,0,'dB'),
+    'crossoverLowHz':(20,76800,200,'Hz'),
+    'crossoverHighHz':(40,86400,2000,'Hz')
 }
 properties = {k:{'type':'number','minimum':v[0],'maximum':v[1],'default':v[2]} for k,v in ranges.items()}
-properties.update({k:{'type':'boolean','default':False} for k in ('compressor','equalizer','drive')})
+properties.update({k:{'type':'boolean','default':False} for k in ('compressor','equalizer','drive','multiband')})
+properties['oversampling']={'type':'integer','enum':[1,2,4],'default':1}
 properties['order']={'type':'array','minItems':3,'maxItems':3,'uniqueItems':True,'items':{'type':'integer','enum':[0,1,2]}}
 save('libs/contracts/session.schema.json', {
     '$schema':'https://json-schema.org/draft/2020-12/schema', '$id':'urn:tonescope:session:1',

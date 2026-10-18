@@ -10,6 +10,7 @@ endif()
 add_library(tonescope_core
   libs/audio-engine/src/Engine.cpp
   libs/audio-engine/src/Wav.cpp
+  libs/audio-engine/src/Streaming.cpp
   libs/analysis/src/Analysis.cpp)
 target_include_directories(tonescope_core PUBLIC libs/audio-engine/include libs/session/include PRIVATE dsp/generated)
 if(EXISTS "${CMAKE_SOURCE_DIR}/.deps/JUCE/CMakeLists.txt")
@@ -33,6 +34,9 @@ if(BUILD_TESTING)
   add_executable(core_tests tests/native/core_tests.cpp)
   target_link_libraries(core_tests PRIVATE tonescope_core)
   add_test(NAME core COMMAND core_tests)
+  add_executable(streaming_tests tests/native/streaming_tests.cpp)
+  target_link_libraries(streaming_tests PRIVATE tonescope_core)
+  add_test(NAME streaming COMMAND streaming_tests)
 endif()
 install(TARGETS tonescope_cli RUNTIME DESTINATION bin)
 if(TONESCOPE_DESKTOP)

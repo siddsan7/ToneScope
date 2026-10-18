@@ -6,3 +6,9 @@
 __pycache__/
 *.pyc
 /.venv/
+**/node_modules/
+**/.eve/
+**/dist/
+**/.env
+**/.env.local
+**/.env.*.local

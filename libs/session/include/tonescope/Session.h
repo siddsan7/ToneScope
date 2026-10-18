@@ -43,10 +43,11 @@ inline Parameters loadParameters(const File& file) {
         {"attackMs", &Parameters::attackMs}, {"releaseMs", &Parameters::releaseMs}, {"kneeDb", &Parameters::kneeDb},
         {"makeupDb", &Parameters::makeupDb}, {"lowDb", &Parameters::lowDb}, {"midDb", &Parameters::midDb},
         {"highDb", &Parameters::highDb}, {"midHz", &Parameters::midHz}, {"midQ", &Parameters::midQ},
-        {"driveDb", &Parameters::driveDb}, {"toneHz", &Parameters::toneHz}, {"outputDb", &Parameters::outputDb}
+        {"driveDb", &Parameters::driveDb}, {"toneHz", &Parameters::toneHz}, {"outputDb", &Parameters::outputDb},
+        {"crossoverLowHz", &Parameters::crossoverLowHz}, {"crossoverHighHz", &Parameters::crossoverHighHz}
     };
     const std::map<std::string, bool Parameters::*> boolean {
-        {"compressor", &Parameters::compressor}, {"equalizer", &Parameters::equalizer}, {"drive", &Parameters::drive}
+        {"compressor", &Parameters::compressor}, {"equalizer", &Parameters::equalizer}, {"drive", &Parameters::drive}, {"multiband", &Parameters::multiband}
     };
     for (const auto& prop : values->getProperties()) {
         auto key = prop.name.toString().toStdString();
@@ -56,6 +57,9 @@ inline Parameters loadParameters(const File& file) {
         } else if (auto bit = boolean.find(key); bit != boolean.end()) {
             if (!prop.value.isBool()) throw std::runtime_error("Bypass parameter must be boolean");
             result.*(bit->second) = bool(prop.value);
+        } else if (key == "oversampling") {
+            if(!prop.value.isInt() || (int(prop.value)!=1 && int(prop.value)!=2 && int(prop.value)!=4)) throw std::runtime_error("Oversampling must be 1, 2 or 4");
+            result.oversampling=int(prop.value);
         } else if (key == "order") {
             auto* a = prop.value.getArray();
             if (!a || a->size() != 3) throw std::runtime_error("Order must contain three stage IDs");

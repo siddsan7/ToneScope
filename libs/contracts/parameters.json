@@ -140,6 +140,24 @@
       "unit": "dB",
       "smoothing_ms": 15,
       "sample_rate_constraint": null
+    },
+    {
+      "id": "crossoverLowHz",
+      "minimum": 20,
+      "maximum": 76800,
+      "default": 200,
+      "unit": "Hz",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": "Hz values <= 0.45 * sample rate"
+    },
+    {
+      "id": "crossoverHighHz",
+      "minimum": 40,
+      "maximum": 86400,
+      "default": 2000,
+      "unit": "Hz",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": "Hz values <= 0.45 * sample rate"
     }
   ]
 }
