@@ -43,6 +43,6 @@ Independent reviews produced concrete regressions: low-rate initialization, extr
 
 ## What remains external
 
-Physical interface/laptop lifecycle, callback timing and soak; licensed musical data and an independently owned sequestered holdout; human listening and accessibility; signing/licensing choices and clean-machine installation; and explicitly authorized provider-backed model qualification remain unperformed. Synthetic tests establish their mathematical and protocol assertions. They do not establish preferred tone, human usability, hardware performance or model competence.
+Physical interface/laptop lifecycle, callback timing and soak; broader musical coverage and an independently owned sequestered holdout; human listening and accessibility; signing/licensing choices and clean-machine installation; and explicitly authorized provider-backed model qualification remain unperformed. Synthetic tests establish their mathematical and protocol assertions. They do not establish preferred tone, human usability, hardware performance or model competence.
 
 `delivery/brain.md` is the compact implementation handoff; the full plan and references remain in durable project documentation. The development orchestrator delegates isolated bounded work, integrates it, commissions independent review, and owns the final evidence.
