@@ -7,7 +7,8 @@ jobs:
     runs-on: windows-2022
     env:
       TONESCOPE_TEST_CLI: ${{ github.workspace }}\build\windows-dev\tonescope_cli_artefacts\Release\tonescope_cli.exe
-      TONESCOPE_ASSISTANT_RUNTIME: ${{ github.workspace }}\services\audio-assistant\agent\lib\service.ts
+      TONESCOPE_ASSISTANT_RUNTIME: ${{ github.workspace }}\services\audio-assistant
+      TONESCOPE_REQUIRE_NATIVE_TESTS: '1'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020

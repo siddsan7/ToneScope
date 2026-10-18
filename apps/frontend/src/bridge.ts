@@ -20,6 +20,9 @@ export type AssistantState = {
   };
 };
 export type Snapshot = {
+  canUndo?: boolean;
+  canRedo?: boolean;
+  captureFinalizing?: boolean;
   assistant?: AssistantState;
   latency: number;
   oversampling: number;
@@ -109,7 +112,7 @@ export function command(
 export function wavePath(values: number[], height = 170) {
   if (!values.length) return "";
   const points = values.map((v, i) => [
-    (i / (values.length - 1)) * 1000,
+    (i / Math.max(1, values.length - 1)) * 1000,
     height / 2 - Math.min(1, Math.abs(v)) * height * 0.46,
   ]);
   return (

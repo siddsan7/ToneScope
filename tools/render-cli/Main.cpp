@@ -5,6 +5,7 @@
 #include <tonescope/ParameterState.h>
 #include <tonescope/Streaming.h>
 #include <tonescope/Publication.h>
+#include <ToneScopeBuildIdentity.h>
 #include <cmath>
 #include <iostream>
 #include <map>
@@ -46,6 +47,10 @@ int main(int argc, char** argv) {
     try {
         if (argc < 2) throw std::runtime_error("Usage: tonescope_cli render|inspect|compare --source file.wav --out output.wav");
         std::string command=argv[1];
+        if(command=="build-info") {
+            if(argc!=2)throw std::runtime_error("build-info accepts no options");
+            print(JSON::parse(tonescopeBuildIdentity));return 0;
+        }
         std::map<std::string,std::string> args;
         std::set<std::string> allowed;
         if(command=="render") allowed={"--source","--out","--session","--block-size","--overwrite","--start","--end"};

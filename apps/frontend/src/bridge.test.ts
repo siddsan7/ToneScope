@@ -55,6 +55,7 @@ describe("measured traces", () => {
   it("bounds waveform amplitude and spectral extent", async () => {
     const { wavePath, spectrumPath } = await import("./bridge");
     expect(wavePath([0, 2])).not.toContain("NaN");
+    expect(wavePath([0.5])).not.toMatch(/NaN|Infinity/);
     expect(spectrumPath([-200, 0, 10])).toBe("M0,180 L500,0 L1000,0");
   });
 });

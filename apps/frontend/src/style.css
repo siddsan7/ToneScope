@@ -76,17 +76,17 @@ h3 {
     sans-serif;
 }
 h1 {
-  font-size: 25px;
+  font-size: 1.92308rem;
   letter-spacing: -1px;
   font-weight: 600;
 }
 h2 {
-  font-size: 23px;
+  font-size: 1.76923rem;
   letter-spacing: -0.5px;
   font-weight: 500;
 }
 h3 {
-  font-size: 14px;
+  font-size: 1.07692rem;
   font-weight: 600;
 }
 select {
@@ -127,7 +127,7 @@ select {
   color: #c2e8cf;
 }
 .brand span:not(.brand-symbol) {
-  font-size: 11px;
+  font-size: 0.84615rem;
   color: #a8b4ad;
 }
 .file-actions {
@@ -152,20 +152,20 @@ main {
 }
 .eyebrow {
   font-family: Commit, Consolas, monospace;
-  font-size: 10px;
+  font-size: 0.84615rem;
   letter-spacing: 1.7px;
   color: #a8b4ad;
   margin-bottom: 8px;
 }
 .secondary {
   font-family: Commit, Consolas, monospace;
-  font-size: 11px;
+  font-size: 0.84615rem;
   color: #a8b4ad;
   margin-top: 8px;
 }
 .local {
   font:
-    9px Commit,
+    0.84615rem Commit,
     Consolas,
     monospace;
   letter-spacing: 1px;
@@ -206,13 +206,13 @@ main {
   color: #e9efec;
 }
 .scope-note {
-  font-size: 10px;
+  font-size: 0.84615rem;
   color: #9ea9a2;
   margin-left: 5px;
 }
 .legend {
   font:
-    10px Commit,
+    0.84615rem Commit,
     Consolas,
     monospace;
   gap: 14px !important;
@@ -265,7 +265,7 @@ main {
   display: flex;
   justify-content: space-between;
   font:
-    9px Commit,
+    0.84615rem Commit,
     Consolas,
     monospace;
   color: #a0ada5;
@@ -287,27 +287,27 @@ main {
 }
 .time {
   font:
-    12px Commit,
+    0.92308rem Commit,
     Consolas,
     monospace;
   white-space: nowrap;
 }
 .time small {
-  font-size: 10px;
+  font-size: 0.84615rem;
   color: #9ea9a2;
 }
 .inline {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 0.84615rem;
 }
 .transport .inline {
   margin-left: auto;
 }
 .shortcut {
   font:
-    8px Commit,
+    0.84615rem Commit,
     Consolas,
     monospace;
   letter-spacing: 1px;
@@ -319,7 +319,7 @@ main {
 }
 .unit {
   font:
-    9px Commit,
+    0.84615rem Commit,
     Consolas,
     monospace;
   color: #a0ada5;
@@ -333,7 +333,7 @@ main {
 .spectrum-scale {
   width: 23px;
   font:
-    8px Commit,
+    0.84615rem Commit,
     Consolas,
     monospace;
   color: #a0ada5;
@@ -376,7 +376,7 @@ main {
 }
 .empty p {
   font:
-    16px Space,
+    1.23077rem Space,
     Segoe UI,
     sans-serif;
   color: #c5d2c9;
@@ -388,12 +388,12 @@ main {
   margin-top: 21px;
 }
 .comparison-row .eyebrow {
-  font-size: 10px;
+  font-size: 0.84615rem;
   margin-bottom: 6px;
 }
 .comparison-row select {
   width: 170px;
-  font-size: 11px;
+  font-size: 0.84615rem;
 }
 .match {
   margin-top: 12px;
@@ -402,7 +402,7 @@ main {
 .match small {
   display: block;
   color: #a0ada5;
-  font-size: 10px;
+  font-size: 0.84615rem;
   margin-top: 4px;
 }
 .selection-inputs {
@@ -415,7 +415,7 @@ main {
 .selection-inputs > span {
   grid-column: span 2;
   font:
-    8px Commit,
+    0.84615rem Commit,
     Consolas,
     monospace;
   letter-spacing: 0.8px;
@@ -429,7 +429,7 @@ main {
   border-radius: 5px;
   padding: 7px;
   font:
-    11px Commit,
+    0.84615rem Commit,
     Consolas,
     monospace;
 }
@@ -440,7 +440,7 @@ main {
   margin-top: 18px;
   color: #a8b4ad;
   font:
-    10px/1.6 Commit,
+    0.84615rem/1.6 Commit,
     Consolas,
     monospace;
 }
@@ -462,23 +462,23 @@ aside {
   flex: 1;
   display: flex;
   gap: 7px;
-  font-size: 11px;
+  font-size: 0.84615rem;
   padding: 7px;
 }
 .chain-heading {
   margin: 23px 0 16px;
 }
 .chain-heading h2 {
-  font-size: 20px;
+  font-size: 1.53846rem;
 }
 .chain-heading p {
   color: #a8b4ad;
-  font-size: 11px;
+  font-size: 0.84615rem;
   margin-top: 6px;
 }
 .order {
   width: 100%;
-  font-size: 11px;
+  font-size: 0.84615rem;
   margin-bottom: 15px;
 }
 .stage {
@@ -504,10 +504,10 @@ aside {
   flex: 1;
 }
 .stage-heading h3 {
-  font-size: 13px;
+  font-size: 1.00000rem;
 }
 .stage-heading p {
-  font-size: 10px;
+  font-size: 0.84615rem;
   color: #a8b4ad;
   margin-top: 3px;
 }
@@ -526,7 +526,7 @@ aside {
   min-width: 0;
 }
 .parameter > label {
-  font-size: 10px;
+  font-size: 0.84615rem;
   color: #c7d1ca;
   grid-column: span 2;
 }
@@ -539,7 +539,7 @@ aside {
 .numeric input {
   color: #edf3ef;
   font:
-    14px Commit,
+    1.07692rem Commit,
     Consolas,
     monospace;
   width: 70%;
@@ -555,7 +555,7 @@ aside {
 }
 .numeric span {
   font:
-    8px Commit,
+    0.84615rem Commit,
     Consolas,
     monospace;
   color: #a8b4ad;
@@ -581,7 +581,7 @@ aside {
 .assistant {
   padding: 30px 5px;
   color: #a8b4ad;
-  font-size: 13px;
+  font-size: 1.00000rem;
   line-height: 1.7;
 }
 .assistant h2 {
@@ -593,7 +593,7 @@ aside {
 }
 .service-state {
   font:
-    9px Commit,
+    0.84615rem Commit,
     Consolas,
     monospace;
   letter-spacing: 1px;
@@ -622,7 +622,7 @@ footer {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 0.84615rem;
   color: #a8b4ad;
 }
 .status {
@@ -631,7 +631,7 @@ footer {
   display: flex;
   align-items: center;
   gap: 9px;
-  font-size: 10px;
+  font-size: 0.84615rem;
   color: #a8b4ad;
   border-top: 1px solid #29322b;
 }
@@ -691,7 +691,7 @@ button[disabled] {
     max-width: 130px;
   }
   .match {
-    font-size: 10px;
+    font-size: 0.84615rem;
   }
   aside {
     padding: 20px 15px;
@@ -702,7 +702,7 @@ button[disabled] {
     grid-template-columns: 1fr;
   }
   .source-title h2 {
-    font-size: 20px;
+    font-size: 1.53846rem;
   }
   aside {
     border-left: 0;
@@ -802,7 +802,7 @@ button[disabled] {
 }
 .frequency-heading select {
   font:
-    9px Commit,
+    0.84615rem Commit,
     Consolas,
     monospace;
   min-height: 28px;
@@ -816,19 +816,19 @@ button[disabled] {
 }
 .audition-band > span {
   font:
-    8px Commit,
+    0.84615rem Commit,
     Consolas,
     monospace;
   letter-spacing: 1px;
   color: #a8b4ad;
 }
 .audition-band select {
-  font-size: 10px;
+  font-size: 0.84615rem;
   min-height: 28px;
 }
 .audition-band small {
   color: #a8b4ad;
-  font-size: 10px;
+  font-size: 0.84615rem;
 }
 .quality-controls {
   padding: 0 0 16px;
@@ -842,13 +842,13 @@ button[disabled] {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  font-size: 11px;
+  font-size: 0.84615rem;
 }
 .quality-controls select {
-  font-size: 10px;
+  font-size: 0.84615rem;
 }
 .quality-controls p {
-  font-size: 10px;
+  font-size: 0.84615rem;
   color: #a8b4ad;
 }
 .assistant textarea {
@@ -911,3 +911,12 @@ button:active {
     overflow: visible;
   }
 }
+
+.text-scale { display: flex; gap: .6rem; align-items: center; }
+.text-scale select { min-width: 5rem; }
+.app-header, footer { min-height: fit-content; flex-wrap: wrap; gap: 12px; padding-block: 16px; }
+.file-actions, .live-controls { flex-wrap: wrap; }
+:root[data-large-text="true"] .app { height: auto; overflow: visible; }
+:root[data-large-text="true"] .workspace { display: block; }
+:root[data-large-text="true"] main, :root[data-large-text="true"] aside { overflow: visible; }
+:root[data-large-text="true"] .app-header { height: auto; }

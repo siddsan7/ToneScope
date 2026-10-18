@@ -14,6 +14,8 @@ from oracles import read_wav, rms, sha256, write_float_wav
 
 RUNTIME=Path(os.environ.get("TONESCOPE_ASSISTANT_RUNTIME",str(ROOT/"services/audio-assistant")))
 CLI=Path(os.environ.get("TONESCOPE_TEST_CLI",str(ROOT/"build/windows-dev/tonescope_cli_artefacts/Release/tonescope_cli.exe")))
+if os.environ.get("TONESCOPE_REQUIRE_NATIVE_TESTS") == "1" and not (CLI.is_file() and (RUNTIME/"agent/lib/service.ts").is_file() and (RUNTIME/"node_modules/zod/package.json").is_file()):
+    raise RuntimeError("Required native assistant integration dependencies are missing; CI must not skip them")
 
 
 @unittest.skipUnless(CLI.is_file() and (RUNTIME/"agent/lib/service.ts").is_file(),"built CLI and installed assistant runtime required")

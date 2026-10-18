@@ -12,9 +12,20 @@ from oracles import (compressor_gain_db, fixture, flatten, read_wav, residual,
                      rms, sha256, write_float_wav)
 from release_check import REQUIRED, validate_manifest
 from run import Runner
+from provenance import valid_compiled_identity
 
 
 class OracleTests(unittest.TestCase):
+    def test_compiled_identity_rejects_old_or_dirty_binary(self):
+        identity = dict(schema_version=1, commit_sha="a"*40, source_identity_sha256="b"*64,
+                        working_tree_dirty=False, compiler="test compiler", generator="test generator")
+        self.assertTrue(valid_compiled_identity(identity, "a"*40, "b"*64))
+        for field, value in (("commit_sha", "c"*40), ("source_identity_sha256", "d"*64),
+                             ("working_tree_dirty", True), ("compiler", "")):
+            changed = dict(identity, **{field: value})
+            self.assertFalse(valid_compiled_identity(changed, "a"*40, "b"*64))
+        self.assertFalse(valid_compiled_identity(None, "a"*40, "b"*64))
+
     def test_rms_analytic(self):
         self.assertEqual(rms([1, -1, 1, -1]), 1)
         self.assertEqual(rms([0, 0]), 0)

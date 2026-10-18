@@ -1,6 +1,7 @@
 """Local evidence identity. Hashes establish consistency, never reviewer authenticity."""
 import hashlib
 import subprocess
+import json
 from pathlib import Path
 
 
@@ -28,3 +29,24 @@ def runtime_files(root, cli):
         paths.append(Path(cli))
     return [{"path": str(p.resolve()), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
             for p in paths if p.is_file()]
+
+
+def compiled_identity(cli):
+    if not cli or not Path(cli).is_file():
+        return None
+    try:
+        result = subprocess.run([str(cli), "build-info"], capture_output=True, text=True, timeout=5, check=True)
+        if len(result.stdout) > 16384:
+            return None
+        value = json.loads(result.stdout)
+        return value if isinstance(value, dict) else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def valid_compiled_identity(value, commit, source):
+    return (isinstance(value, dict) and value.get("schema_version") == 1
+            and value.get("commit_sha") == commit
+            and value.get("source_identity_sha256") == source
+            and value.get("working_tree_dirty") is False
+            and bool(value.get("compiler")) and bool(value.get("generator")))

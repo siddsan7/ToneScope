@@ -1,0 +1,5 @@
+Adds independent DSP response/timing/phase/alias evaluators, frozen grouped regression fixtures, adversarial grounded-assistant graders, and fail-closed exact-source/runtime release evidence checks. Native WAV rendering now uses bounded streaming buffers, selected renders preserve source history, declared-delay comparisons align samples explicitly, and atomic publication rejects competing output writers.
+
+The renderer contracts are included because the declared-delay integration gate requires them. The first CI run exposed that missing dependency; the gate was retained and the dependency integrated. The evaluation fixtures remain inspectable regressions, not a sequestered holdout or model-quality result.
+
+Independent review covers evaluator head b6833a9 plus renderer/contract source 0d6def5 and the publication repair. Local evidence: 31 Python tests, contracts10/10, DSP12/12 and integration7/7; nine history-preserving selection probes and concurrent publication race pass. Final exact-head CI must pass before merge. Hardware, human listening, licensed corpus, live provider/model, signing and clean-machine qualification remain separate release gates.

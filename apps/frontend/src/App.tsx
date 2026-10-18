@@ -10,6 +10,8 @@ import {
   Play,
   Pause,
   RotateCcw,
+  Undo2,
+  Redo2,
   Mic,
   Disc3,
   SlidersHorizontal,
@@ -48,7 +50,7 @@ function Numeric({
   );
   const commit = () => {
     const v = Number(draft);
-    if (Number.isFinite(v) && v >= control.min && v <= control.max) onChange(v);
+    if (draft.trim() !== "" && Number.isFinite(v) && v >= control.min && v <= control.max) onChange(v);
     else setDraft(String(control.value));
   };
   return (
@@ -87,7 +89,12 @@ export default function App() {
     [error, setError] = useState(""),
     [panel, setPanel] = useState("chain"),
     [analysis, setAnalysis] = useState("spectrum"),
-    [prompt, setPrompt] = useState("");
+    [prompt, setPrompt] = useState(""),
+    [textScale, setTextScale] = useState(100);
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${13 * textScale / 100}px`;
+    document.documentElement.dataset.largeText = String(textScale > 100);
+  }, [textScale]);
   const send = useCallback(
     async (action: string, payload: Record<string, unknown> = {}) => {
       try {
@@ -125,9 +132,15 @@ export default function App() {
   }, []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && ["o", "s"].includes(e.key.toLowerCase())) {
+      const editing = (e.target as HTMLElement).closest('input,textarea,[contenteditable="true"]');
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !editing) {
         e.preventDefault();
-        void send(e.key.toLowerCase() === "o" ? "import" : "save");
+        void send(e.shiftKey ? "redo" : "undo");
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && ["o", "s", "e"].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+        void send(e.key.toLowerCase() === "o" ? (e.shiftKey ? "open" : "import") : e.key.toLowerCase() === "e" ? "export" : "save");
         return;
       }
       if (
@@ -167,6 +180,8 @@ export default function App() {
             </div>
           </div>
           <div className="file-actions">
+            <Button variant="ghost" title="Undo parameter change (Ctrl+Z)" aria-label="Undo parameter change" disabled={!model?.canUndo} onClick={() => send("undo")}><Undo2 /></Button>
+            <Button variant="ghost" title="Redo parameter change (Ctrl+Shift+Z)" aria-label="Redo parameter change" disabled={!model?.canRedo} onClick={() => send("redo")}><Redo2 /></Button>
             <Button
               variant="outline"
               onClick={() => send("import")}
@@ -773,6 +788,11 @@ export default function App() {
           </aside>
         </div>
         <footer>
+          <label className="text-scale">Text size
+            <select aria-label="Interface text size" value={textScale} onChange={e => setTextScale(Number(e.target.value))}>
+              {[100,125,150,200].map(value => <option key={value} value={value}>{value}%</option>)}
+            </select>
+          </label>
           <div className="live-controls">
             <Mic size={16} />
             <label className="inline">
@@ -787,11 +807,11 @@ export default function App() {
             <Button
               variant="outline"
               size="sm"
-              disabled={!model?.monitoring}
+              disabled={!model?.monitoring || model?.captureFinalizing}
               onClick={() => send("capture")}
             >
               <Disc3 size={14} />
-              {model?.recording ? "Use captured take" : "Capture take"}
+              {model?.captureFinalizing ? "Saving take…" : model?.recording ? "Use captured take" : "Capture take"}
             </Button>
             <span className="headphone">
               <Headphones size={14} />
