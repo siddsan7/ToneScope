@@ -41,7 +41,7 @@ inline juce::var parameterDescriptors(const Parameters& p,double rate) {
     add("equalizer","lowDb","dB",p.lowDb,-18,18);add("equalizer","midDb","dB",p.midDb,-18,18);
     add("equalizer","highDb","dB",p.highDb,-18,18);
     add("equalizer","midHz","Hz",p.midHz,20,std::min(20000.,rate*.45));
-    add("equalizer","midQ","ratio",p.midQ,.2,10);
+    add("equalizer","midQ","Q",p.midQ,.2,10);
     add("drive","driveDb","dB",p.driveDb,0,36);
     add("drive","toneHz","Hz",p.toneHz,20,std::min(20000.,rate*.45));
     add("output","outputDb","dB",p.outputDb,-24,24);

@@ -1,5 +1,23 @@
 # ToneScope working context
 
+## Active continuation (supersedes historical delivery notes below)
+User explicitly requested completion through genuine external blockers, production PR push/review/merge workflow, rigorous project-specific DSP/AI evaluation, and a dark React/shadcn frontend embedded in the native app (architecture confirmed).
+
+Foundation PR #1 and exact-head DSP PR #2 are merged after independent agent review and passing Windows CI. Main checkout `codex/delivery-orchestration` integrates DSP, streaming CLI, React frontend, hardened evaluations and the optional assistant service. Integration is ongoing; this is not a qualified release. Detailed historical notes below describe an earlier baseline and are superseded by this section.
+
+Active isolated work, with minimal task-specific context:
+- `.worktrees/assistant`, `codex/audio-assistant`: service committed ab58b909; native AssistantBridge.h/AssistantIntegration.inc connection next. Offline rules by default, real native candidate rendering; dormant metered opt-in Gateway adapter; no paid calls made.
+- `.worktrees/native-state`, `codex/native-state-transport`: Main.cpp, persistent background dry capture, raw export separated from audition, recovery, undo/redo and assistant lifecycle hooks. Compiling before handoff.
+- Read-only integration reviewer: concurrent export publication, exact WebView2 dependency pin, integration validation. Found race and SDK pin bypass; fixes pending verification.
+- Orchestrator: shared contracts, bounded streaming CLI, CMake/CI, PR integration and final evidence. No overlapping writer paths.
+- Frozen completed workers: `.worktrees/dsp-next` head4aa4489 (merged PR2); `.worktrees/evaluation-next` headb6833a9 (evaluation PR pending); `.worktrees/frontend` headaa4dfb3 (integrated, embedded build pending).
+
+Current root build session3054 compiles the actual embedded WebView2 frontend. Avoid editing native sources while compiling. CLI streaming/selection, exact processing history and atomic no-clobber publication are being verified. Pending SDK fix: explicitly force WebView2_root_dir to pinned NuGet directory; JUCE otherwise selects the first matching package/cache. Remaining software includes native assistant wiring, long-file desktop inspection, full accessibility/keyboard/device handling, packaging and final clean-head evidence. Do not label software work as external qualification.
+
+Evaluation: independent EQ/comp timing/crossover/alias oracles, immutable grouped regression inventory, adversarial proposal graders, exact-source/runtime release evidence. Latest evaluator worker run31 Python tests, contracts10, DSP12, integration7 passed against integrated CLI. These are development evidence, not clean-final-commit release evidence. Nine fixed alias fixtures improved18.55–26.32dB; this bounded result is not a universal audio-quality claim. Service18 tests and frontend5 tests passed in worker contexts; integrated reruns required.
+
+Approved additive Parameters API: int `oversampling=1`, bool `multiband=false`, `crossoverLowHz=200`, `crossoverHighHz=2000`; root updates schemas/loader/CLI when DSP head is ready. Analysis helpers are documented in worker handoff; positive latency aligns wet[n+latency] to dry[n]. Live paid model calls remain disabled without explicit consent and configured budget.
+
 Read this first on resume. Load only the relevant contract, task and specification section afterward.
 
 ## Goal and acceptance

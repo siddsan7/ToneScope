@@ -4,6 +4,7 @@
 #include <tonescope/Session.h>
 #include <tonescope/ParameterState.h>
 #include <tonescope/Streaming.h>
+#include <tonescope/Publication.h>
 #include <cmath>
 #include <iostream>
 #include <map>
@@ -88,6 +89,7 @@ int main(int argc, char** argv) {
                 File out=File::getCurrentWorkingDirectory().getChildFile(String::fromUTF8(required("--out").c_str()));
                 const auto sidecar=out.getSiblingFile(out.getFileName()+".json");
                 if(out==source || sidecar==source) throw std::runtime_error("Output must differ from source");
+                session::PublicationReservation publication(out,sidecar);
                 if((out.exists() || sidecar.exists()) && !args.contains("--overwrite")) throw std::runtime_error("Output or manifest exists; select another path or --overwrite");
                 const auto first=integer(args,"--start",0),last=integer(args,"--end",static_cast<int>(info.frames));
                 if(first>=last||last>info.frames)throw std::runtime_error("Selection must be a nonempty source-sample interval");
@@ -109,10 +111,10 @@ int main(int argc, char** argv) {
                 }
                 writer.finish();
                 if(hashFile(source)!=sourceHash) throw std::runtime_error("Source changed during render; retry from a stable file");
-                if(!temporary.overwriteTargetFileWithTemporary()) throw std::runtime_error("Atomic output publication failed");
+                if(!session::publishCompleteFile(temporary.getFile(),out,args.contains("--overwrite"))) throw std::runtime_error("Output publication failed or destination appeared during render");
                 auto manifest=object({{"schema_version",1},{"frames",last-first},{"channels",info.channels},{"sample_rate_hz",info.sampleRate},{"source_sha256",sourceHash},{"artifact_sha256",hashFile(out)},{"graph_sha256",session::hashParameters(p)},{"latency_samples",latency},{"alignment_samples",alignment},{"selection_samples",var(Array<var>{first,last})},{"processed_frames",int64(processingEnd)},{"oversampling",p.oversampling},{"multiband",p.multiband},{"export_timeline",alignment?"source-aligned":"engine-output"},{"output",out.getFullPathName()}});
                 TemporaryFile manifestTemp(sidecar);
-                if(!manifestTemp.getFile().replaceWithText(JSON::toString(manifest)) || !manifestTemp.overwriteTargetFileWithTemporary()) throw std::runtime_error("Audio complete but manifest write failed");
+                if(!manifestTemp.getFile().replaceWithText(JSON::toString(manifest)) || !session::publishCompleteFile(manifestTemp.getFile(),sidecar,args.contains("--overwrite"))) throw std::runtime_error("Audio complete but manifest publication failed or destination appeared");
                 print(manifest);
             }
         }
