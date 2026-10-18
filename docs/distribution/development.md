@@ -21,7 +21,10 @@ manifest-owned files whose hashes still match, preserves modified and unknown
 files, retains a receipt if modified files remain, and never recursively deletes.
 Empty directories may remain. User sessions, captures, history and budget state
 outside the install tree are preserved. Stop the app before upgrading/uninstalling.
-Reparse points and escaping manifest paths are rejected.
+Escaping manifest paths and redirecting or unknown reparse points are rejected
+through the volume root. Only Windows' known nonredirecting CLOUD through CLOUD_F
+placeholder tags are allowed, after querying the actual entry through a handle;
+failed tag queries are rejected. Junctions and symbolic links remain rejected.
 
 Create a local support report explicitly with
 `pwsh tools/diagnostics-dev.ps1 -PackageRoot <version-directory> -Output <new.json>`.

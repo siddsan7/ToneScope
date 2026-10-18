@@ -1,11 +1,28 @@
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot/PackageSafety.ps1"
-$workspace = Split-Path $PSScriptRoot -Parent
-$temp = Join-Path $workspace "artifacts/package-tests/$([guid]::NewGuid().ToString('N'))"
+$temp = Join-Path ([IO.Path]::GetTempPath()) "ToneScope-package-tests/$([guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $temp -Force | Out-Null
 $checks = 0
 function Assert([bool]$Condition, [string]$Message) { if (-not $Condition) { throw $Message }; $script:checks++ }
 function Reject([scriptblock]$Action, [string]$Message) { $failed=$false; try { & $Action | Out-Null } catch { $failed=$true }; Assert $failed $Message }
+Assert ([ToneScope.PackagePathInfo]::IsCloudPlaceholder(0x9000601Au)) 'Documented CLOUD_6 tag rejected'
+Assert (-not [ToneScope.PackagePathInfo]::IsCloudPlaceholder(0xA0000003u)) 'Mount-point tag allowed'
+Assert (-not [ToneScope.PackagePathInfo]::IsCloudPlaceholder(0xA000000Cu)) 'Symlink tag allowed'
+Assert (-not [ToneScope.PackagePathInfo]::IsCloudPlaceholder(0x9000001Bu)) 'Unknown tag allowed'
+$cloudAncestors = 0
+$ancestor = $PSScriptRoot
+while ($ancestor) {
+    if ((Get-Item -LiteralPath $ancestor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        $tag = [ToneScope.PackagePathInfo]::ReadTag($ancestor)
+        if ([ToneScope.PackagePathInfo]::IsCloudPlaceholder($tag)) {
+            Assert ((Get-SafePath $PSScriptRoot) -eq [IO.Path]::GetFullPath($PSScriptRoot)) 'Actual cloud placeholder ancestry rejected'
+            Write-Output ('Verified actual cloud ancestor tag: 0x{0:X8}' -f $tag)
+            $cloudAncestors++
+        }
+    }
+    $ancestor = Split-Path $ancestor -Parent
+}
+Write-Output "Actual cloud placeholder ancestors checked: $cloudAncestors"
 function Payload([string]$Version) {
     $dir = Join-Path $temp "payload-$Version"
     New-Item -ItemType Directory -Path "$dir/bin" -Force | Out-Null
@@ -21,6 +38,23 @@ $checks++
 Assert ((Get-Content "$install/active.json" -Raw | ConvertFrom-Json).version -eq 'v2') 'Upgrade activation failed'
 & "$PSScriptRoot/install-dev.ps1" -PackageRoot $v1 -InstallRoot $install -ActivateVersion v1
 Assert ((Get-Content "$install/active.json" -Raw | ConvertFrom-Json).version -eq 'v1') 'Rollback failed'
+Assert ((Get-Content "$install/active.json" -Raw | ConvertFrom-Json).executable -ceq 'versions/v1/bin/ToneScope.exe') 'Activation path was not derived from verified tree'
+$receiptPath = "$install/versions/v2/manifest.json"
+$originalReceipt = Get-Content $receiptPath -Raw
+$receipt = $originalReceipt | ConvertFrom-Json
+$receipt.version = 'unverified'
+$receipt | ConvertTo-Json -Depth 5 | Set-Content $receiptPath
+$activeBefore = Get-Content "$install/active.json" -Raw
+Reject { & "$PSScriptRoot/install-dev.ps1" -PackageRoot $v2 -InstallRoot $install -ActivateVersion v2 } 'Mismatched receipt identity accepted'
+Assert ((Get-Content "$install/active.json" -Raw) -ceq $activeBefore) 'Failed identity check changed active version'
+$originalReceipt | Set-Content $receiptPath
+$receipt = $originalReceipt | ConvertFrom-Json
+$receipt.files[0].path = 'bin/other.exe'
+Copy-Item -LiteralPath "$install/versions/v2/bin/ToneScope.exe" -Destination "$install/versions/v2/bin/other.exe"
+$receipt | ConvertTo-Json -Depth 5 | Set-Content $receiptPath
+Reject { & "$PSScriptRoot/install-dev.ps1" -PackageRoot $v2 -InstallRoot $install -ActivateVersion v2 } 'Unowned executable activated'
+Assert ((Get-Content "$install/active.json" -Raw) -ceq $activeBefore) 'Failed ownership check changed active version'
+$originalReceipt | Set-Content $receiptPath
 Reject { & "$PSScriptRoot/install-dev.ps1" -PackageRoot $v1 -InstallRoot $install } 'Existing version overwritten'
 'changed' | Set-Content "$install/versions/v1/bin/ToneScope.exe"
 Reject { & "$PSScriptRoot/install-dev.ps1" -PackageRoot $v1 -InstallRoot $install -ActivateVersion v1 } 'Tampered rollback accepted'
@@ -40,6 +74,19 @@ Reject { & "$PSScriptRoot/install-dev.ps1" -PackageRoot $evil -InstallRoot $inst
 $link=Join-Path $temp 'junction'
 New-Item -ItemType Junction -Path $link -Target $v2 | Out-Null
 Reject { & "$PSScriptRoot/verify-package.ps1" -PackageRoot $link } 'Junction accepted'
+Reject { Get-SafePath $temp 'junction/bin/ToneScope.exe' } 'Junction below supplied root accepted'
+$ancestorTarget = Join-Path $temp 'ancestor-target'
+New-Item -ItemType Directory -Path "$ancestorTarget/ordinary-child" -Force | Out-Null
+Copy-Item -LiteralPath "$v2/bin" -Destination "$ancestorTarget/ordinary-child" -Recurse
+Copy-Item -LiteralPath "$v2/manifest.json" -Destination "$ancestorTarget/ordinary-child"
+$ancestorLink = Join-Path $temp 'ancestor-junction'
+New-Item -ItemType Junction -Path $ancestorLink -Target $ancestorTarget | Out-Null
+$nestedRoot = "$ancestorLink/ordinary-child"
+Reject { & "$PSScriptRoot/verify-package.ps1" -PackageRoot $nestedRoot } 'Package root below ancestor junction accepted'
+Reject { & "$PSScriptRoot/install-dev.ps1" -PackageRoot $v2 -InstallRoot "$nestedRoot/install" } 'Install root below ancestor junction accepted'
+Reject { & "$PSScriptRoot/diagnostics-dev.ps1" -PackageRoot $v2 -Output "$nestedRoot/report.json" } 'Diagnostic output below ancestor junction accepted'
+Assert (-not (Test-Path "$ancestorTarget/ordinary-child/install")) 'Rejected install mutated junction target'
+Assert (-not (Test-Path "$ancestorTarget/ordinary-child/report.json")) 'Rejected diagnostics mutated junction target'
 $diag=Join-Path $temp 'diagnostics.json'
 & "$PSScriptRoot/diagnostics-dev.ps1" -PackageRoot $v2 -Output $diag
 $text=Get-Content $diag -Raw

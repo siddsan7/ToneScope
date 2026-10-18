@@ -7,6 +7,7 @@ if ($ActivateVersion) {
     if ($ActivateVersion -notmatch '^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$') { throw 'Invalid version' }
     $destination = Get-SafePath $root "versions/$ActivateVersion"
     $manifest = Read-PackageManifest $destination
+    if ($manifest.version -cne $ActivateVersion) { throw 'Version identity mismatch' }
     Test-PackageFiles $destination $manifest
 } else {
     $source = Get-SafePath $PackageRoot
@@ -23,6 +24,9 @@ if ($ActivateVersion) {
     Copy-Item -LiteralPath (Get-SafePath $source 'manifest.json') -Destination $destination
     Test-PackageFiles $destination $manifest
 }
+$executable = Get-SafePath $destination 'bin/ToneScope.exe'
+if (@($manifest.files | Where-Object { (Get-SafePath $destination $_.path) -eq $executable }).Count -ne 1) { throw 'Manifest must own the activated executable' }
+$relativeExecutable = [IO.Path]::GetRelativePath($root, $executable).Replace('\','/')
 $active = Get-SafePath $root 'active.json'
-@{schema_version=1; version=$manifest.version; executable="versions/$($manifest.version)/bin/ToneScope.exe"} | ConvertTo-Json | Set-Content -LiteralPath $active -Encoding utf8
+@{schema_version=1; version=$manifest.version; executable=$relativeExecutable} | ConvertTo-Json | Set-Content -LiteralPath $active -Encoding utf8
 Write-Output "Active development version: $($manifest.version). Launch $destination/bin/ToneScope.exe"

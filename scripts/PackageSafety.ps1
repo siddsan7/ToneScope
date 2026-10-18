@@ -1,4 +1,37 @@
 $ErrorActionPreference = 'Stop'
+if (-not ('ToneScope.PackagePathInfo' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+namespace ToneScope {
+    public static class PackagePathInfo {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct AttributeTagInfo { public uint Attributes; public uint Tag; }
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetFileInformationByHandleEx(SafeFileHandle handle, int infoClass, out AttributeTagInfo info, uint size);
+        public static uint ReadTag(string path) {
+            // Zero access, share read/write/delete; inspect the reparse entry itself.
+            using (var handle = CreateFileW(path, 0, 7, IntPtr.Zero, 3, 0x02200000, IntPtr.Zero)) {
+                if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+                AttributeTagInfo info;
+                if (!GetFileInformationByHandleEx(handle, 9, out info, (uint)Marshal.SizeOf<AttributeTagInfo>()))
+                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                return info.Tag;
+            }
+        }
+        public static bool IsCloudPlaceholder(uint tag) {
+            // Windows SDK winnt.h: CLOUD .. CLOUD_F differ only in CLOUD_MASK.
+            // Never allow a name-surrogate (path-redirecting) or unknown tag.
+            return (tag & 0x20000000u) == 0 && (tag & ~0x0000F000u) == 0x9000001Au;
+        }
+    }
+}
+'@
+}
 function Get-SafePath([string]$Root, [string]$Relative = '') {
     $base = [IO.Path]::GetFullPath($Root).TrimEnd('\','/')
     if ($Relative -and ([IO.Path]::IsPathRooted($Relative) -or $Relative -match '(^|[\\/])\.\.([\\/]|$)' -or $Relative -match '[:*?]')) { throw "Unsafe relative path: $Relative" }
@@ -7,9 +40,13 @@ function Get-SafePath([string]$Root, [string]$Relative = '') {
     $cursor = $full
     while ($cursor) {
         if (Test-Path -LiteralPath $cursor) {
-            if ((Get-Item -LiteralPath $cursor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Reparse point rejected: $cursor" }
+            if ((Get-Item -LiteralPath $cursor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                $tag = [ToneScope.PackagePathInfo]::ReadTag($cursor)
+                if (-not [ToneScope.PackagePathInfo]::IsCloudPlaceholder($tag)) { throw "Redirecting or unknown reparse point rejected: $cursor" }
+            }
         }
-        if ($cursor -eq $base) { break }
+        # The supplied root may itself be an ordinary child below a junction.
+        # Validate its entire ancestry as well as the contained relative path.
         $parent = Split-Path $cursor -Parent
         if ($parent -eq $cursor) { break }; $cursor = $parent
     }
