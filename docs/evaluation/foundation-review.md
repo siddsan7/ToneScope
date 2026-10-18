@@ -1,0 +1,7 @@
+# Foundation independent review
+
+Reviewed exact source commit `f64462344dad474a3a88e6c877c05c6a00477a83` in an isolated clean checkout, concentrating on evaluator, release validation, CLI publication, engine numerical contracts and development CI. This is a bounded source review, not hardware, human or model qualification.
+
+Python: 11 passed, 4 native boundary checks skipped because the isolated checkout has no build. Using the orchestrator-supplied root development CLI: contracts 9 passed and integration 6 passed. The binary's matching source commit was not attested, so these runs establish behavior of that supplied binary only. Raw run records remain under `artifacts/review-foundation/` in the worker checkout.
+
+No blocker identified for a private development foundation merge, conditional on its independent CI and explicitly unqualified description. Production release remains blocked. The foundation release checker accepted a fabricated manifest with arbitrary commit/runtime hashes, reused JSON as every artifact and invented case IDs; its own structural unit fixture demonstrated this. The hardening follow-up rejects this through exact clean checkout/source/runtime identity, distinct files, unique suite/run identities and frozen case inventories. Local hashes establish consistency, not cryptographic reviewer identity or actual human participation; those require independently trusted review/qualification systems.

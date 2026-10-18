@@ -10,6 +10,7 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
+from provenance import runtime_files, source_identity
 
 from oracles import (VERSION, compressor_gain_db, fixture, flatten, read_wav,
                      residual, rms, sha256, write_float_wav)
@@ -45,6 +46,9 @@ class Runner:
         self.commit = git_commit()
         self.results = []
         self.cli = str(Path(args.cli).resolve()) if args.cli else None
+        self.initial_source = source_identity(ROOT)
+        self.initial_dirty = git_dirty()
+        self.runtime = runtime_files(ROOT, self.cli)
 
     def command(self, *args, reject=False):
         if not self.cli or not Path(self.cli).is_file():
@@ -273,6 +277,12 @@ class Runner:
         summary = {"schema_version": 1, "run_id": self.run_id, "suite": suite, "status": status,
                    "split": self.args.split,
                    "commit_sha": self.commit, "working_tree_dirty": git_dirty(),
+                   "source_identity_sha256": self.initial_source,
+                   "source_unchanged": self.initial_source == source_identity(ROOT),
+                   "started_working_tree_dirty": self.initial_dirty,
+                   "runtime_files": self.runtime,
+                   "runtime_unchanged": self.runtime == runtime_files(ROOT, self.cli),
+                   "gates_sha256": sha256(ROOT / "evals/gates.json"),
                    "runner_sha256": sha256(__file__), "oracle_sha256": sha256(ROOT / "evals/oracles.py"),
                    "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                    "platform": platform.platform(), "python": sys.version.split()[0],
