@@ -23,6 +23,7 @@ inline juce::String publicationPath(const juce::String& absolute) {
 }
 #endif
 inline juce::File fileForIo(const juce::File& file) {
+    if(file==juce::File{})return file;
 #if defined(_WIN32)
     return juce::File(publicationPath(file.getFullPathName()));
 #else

@@ -30,13 +30,16 @@
     void webCommand(const juce::Array<juce::var>& arguments,juce::WebBrowserComponent::NativeFunctionCompletion complete){
         if(arguments.size()!=1||!arguments[0].isObject()){setStatus("Invalid frontend command.");complete(webSnapshot());return;}
         const auto input=arguments[0];auto action=input["action"].toString();
+        if(assistantPreviewActive()&&(action=="mode"||action=="match"||action=="band"||action=="quality"||action=="multiband"||action=="play"||action=="seek"||action=="rewind"||action=="loop")){
+            setStatus("Use Current settings / Suggestion in the assistant to compare this verified preview, or dismiss it to return to transport controls.");complete(webSnapshot());return;
+        }
         if(!input["version"].isInt()||(int)input["version"]!=1){setStatus("Unsupported frontend protocol version.");complete(webSnapshot());return;}
         auto number=[&](const char* key){auto value=input[key];return (value.isInt()||value.isInt64()||value.isDouble())&&std::isfinite((double)value);};
         auto toggle=[&](juce::ToggleButton& button){if(input["value"].isBool())button.setToggleState((bool)input["value"],juce::sendNotificationSync);else setStatus("Expected a boolean control value.");};
         if(action=="snapshot"){}
         else if(action.startsWith("microscope."))microscopeCommand(action,input);
         else if(action=="undo")undoParameters();else if(action=="redo")redoParameters();else if(action=="recover")restoreRecovery();
-        else if(action=="assistant.ask"||action=="assistant.cancel"||action=="assistant.status"||action=="assistant.preview"||action=="assistant.apply"||action=="assistant.dismiss"||action=="assistant.history.delete"){if(assistantCommand)assistantCommand(action,input);else setStatus("Assistant service unavailable. No request was sent.");}
+        else if(action=="assistant.ask"||action=="assistant.cancel"||action=="assistant.status"||action=="assistant.preview"||action=="assistant.audition"||action=="assistant.apply"||action=="assistant.dismiss"||action=="assistant.history.delete"){if(assistantCommand)assistantCommand(action,input);else setStatus("Assistant service unavailable. No request was sent.");}
         else if(action=="import")chooseImport();else if(action=="open")openSession();else if(action=="save")saveSession();else if(action=="export")exportAudio();else if(action=="export.selection")exportAudio(true);else if(action=="devices")showDevices();else if(action=="play")togglePlay();else if(action=="pause")pausePlayback();else if(action=="rewind")rewindPlayback();
         else if(action=="quality"&&input["value"].isInt()&&((int)input["value"]==1||(int)input["value"]==2||(int)input["value"]==4)){oversampling=(int)input["value"];parametersChanged(true);}
         else if(action=="multiband"&&input["value"].isBool()){multiband=(bool)input["value"];parametersChanged(true);}

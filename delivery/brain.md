@@ -6,9 +6,9 @@ Read this first; load only the relevant API/spec/task afterward. Full specificat
 Complete the Windows effects engine/audio microscope and separately gated assistant, with recruiter-reviewable PR history and project-specific independent evaluations. User confirmed dark React/shadcn embedded inside native JUCE, preserving C++ audio. Apple design/motion principles apply; Free Faces fonts are locally licensed. Root orchestrates; bounded agents use isolated worktrees and concise task context. Merges require independent review and exact-head CI. No public release or paid provider calls are authorized by development work.
 
 ## Delivery state
-Private GitHub `siddsan7/ToneScope`. Foundation PR1 and DSP PR2 merged after independent agent review and Windows CI. PR3 (evaluation + required streaming/latency contracts) exact head20a99b2 has both CI runs passing; independent exact-composition review pending. PR4 integration draft includes frontend/service/streaming; first CI caught bridge compile error, fixed in integrated3e2e714; final push/review/CI pending. Root branch `codex/delivery-orchestration`.
+Private GitHub `siddsan7/ToneScope`. Foundation PR1 and DSP PR2 merged after independent agent review and Windows CI. PR3 (evaluation + required streaming/latency contracts) exact head20a99b2 merged after independent exact-composition review and both passing CI runs. PR4 integration draft includes frontend/service/streaming; first CI caught bridge compile error, fixed in integrated3e2e714; final push/review/CI pending. Root branch `codex/delivery-orchestration`.
 
-Integrated commits include native state/capture3e2e714, Faust kernels5f08ee1, dynamics APIs641cf1d, accessibility/provenance50a71bc and packagingbc1413c. New frontend manual-passage UI/MicroscopeIntegration.inc and progress updates are uncommitted pending native hook integration. Do not reset them.
+Integrated commits include native state/capture3e2e714, Faust kernels5f08ee1, dynamics APIs641cf1d, accessibility/provenance50a71bc and packagingbc1413c plus independently approved safety followup8c7bde0. New frontend manual-passage UI/MicroscopeIntegration.inc and progress updates are uncommitted pending native hook integration. Do not reset them.
 
 ## Current implementation
 - C++20/MSVC19.44, JUCE9.0.4 exact3fb5cbc, Faust2.88.0; versions/hashes in dependencies.lock.json. Real WebView2 SDK1.0.3485.44 archive pinned and exact cache path forced (wildcard lookup bypass fixed).
@@ -22,7 +22,7 @@ Integrated commits include native state/capture3e2e714, Faust kernels5f08ee1, dy
 ## Active isolated ownership
 - `.worktrees/native-state`, native_state_delivery: Main.cpp, FilePlayback/streaming inspection helpers and transport tests. Long-file metadata/absolute timeline, <=10s bounded inspection, full-history processing, exact entire-selection metrics, worker-resampled playback ring and streaming export. Also owns WebFrontend.inc snapshot offsets, actual streamGR and guarded MicroscopeIntegration hooks. Root will wire short renderWithDynamics afterward. --source launch added for real UI tests.
 - `.worktrees/assistant`, assistant_delivery: new AssistantBridge.h/AssistantIntegration.inc and nativehelper test, service host ready-file handshake. Actual1x protocol passed; investigating2x native_cli_failed regression. Persistent private history and cryptographic capability; Node24 optional. Prefers bin/assistant/host.mjs then dev TS entry. Root must add CMake assistant test/link dependencies when handed off.
-- integration_review: exact PR3 composition approval first; packaging369a067 security review next. Read-only.
+- integration_review: PR3 exact-head, packaging21bccdd and deep Windows path changes approved; review artifacts retained in artifacts/integration-review. Next native integration review pending.
 - Root owns frontend TSX/CSS, MicroscopeIntegration.inc, CMake/CI/contracts/provenance, integration and final verification. No overlapping root Main edits until worker handoff.
 
 ## Verification and commands

@@ -101,7 +101,7 @@ export default function App() {
     async (action: string, payload: Record<string, unknown> = {}) => {
       try {
         const value = await command(action, payload);
-        setModel(value);
+        setModel(current => !current || value.revision >= current.revision ? value : current);
         setError("");
       } catch (e) {
         setError(String(e));
@@ -118,7 +118,7 @@ export default function App() {
       inFlight = true;
       try {
         const s = await command("snapshot");
-        if (alive) setModel(s);
+        if (alive) setModel(current => !current || s.revision >= current.revision ? s : current);
       } catch (e) {
         if (alive) setError(String(e));
       } finally {
@@ -242,6 +242,7 @@ export default function App() {
                 LOCAL ENGINE
               </span>
             </div>
+            {model?.assistant?.auditioning && <p className="preview-scope" role="status">Comparing the selected passage: {model.assistant.auditionSource === "baseline" ? "current processed settings" : "verified suggestion"}. Outside the selection, traces retain the current settings. Use the assistant’s comparison controls or dismiss the preview.</p>}
             <section className="scope-card" aria-label="Audio comparison">
               <div className="scope-heading">
                 <div>
@@ -482,6 +483,7 @@ export default function App() {
                 <p className="eyebrow">LISTEN TO</p>
                 <select
                   aria-label="Audition source"
+                  disabled={model?.assistant?.auditioning}
                   value={model?.mode ?? 2}
                   onChange={(e) =>
                     send("mode", { value: Number(e.target.value) })
@@ -502,7 +504,7 @@ export default function App() {
               <label className="inline match">
                 <Switch
                   checked={model?.matching ?? false}
-                  disabled={!model?.ready}
+                  disabled={!model?.ready || model?.assistant?.auditioning}
                   onCheckedChange={(value) => send("match", { value })}
                 />
                 <span>
@@ -696,7 +698,8 @@ export default function App() {
               <TabsContent value="assistant">
                 <div className="assistant">
                   <AudioLines size={28} />
-                  <h2>A second pair of ears.</h2>
+                  <h2>Make a measured change.</h2>
+                  <p>Offline level assistant · suggestions use measured RMS and peak. Tonal requests require a separately configured model.</p>
                   <p>
                     {model?.assistant?.message ||
                       "The assistant service is not connected. Audio stays on this computer."}
@@ -709,7 +712,7 @@ export default function App() {
                       </label>
                       <textarea
                         id="assistant-prompt"
-                        placeholder="Keep the pick attack, soften the upper mids..."
+                        placeholder="Make this passage a little louder."
                         value={prompt}
                         maxLength={2000}
                         onChange={(e) => setPrompt(e.target.value)}
@@ -761,6 +764,12 @@ export default function App() {
                           >
                             Preview suggestion
                           </Button>
+                          {model.assistant.auditioning && <div className="assistant-compare" aria-label="Compare current settings and suggestion">
+                            <Button variant={model.assistant.auditionSource === "baseline" ? "default" : "outline"} onClick={() => send("assistant.audition",{source:"baseline",matching:model.assistant?.matched ?? false})}>Current settings</Button>
+                            <Button variant={model.assistant.auditionSource === "candidate" ? "default" : "outline"} onClick={() => send("assistant.audition",{source:"candidate",matching:model.assistant?.matched ?? false})}>Suggestion</Button>
+                            <label className="inline"><Switch aria-label="Match suggestion RMS to current settings" checked={model.assistant.matched ?? false} onCheckedChange={matching => send("assistant.audition",{source:model.assistant?.auditionSource ?? "candidate",matching})} />Match suggestion RMS</label>
+                            <p>{model.assistant.auditionSource === "baseline" ? "Current processed settings at raw gain" : "Verified suggestion"} · {model.assistant.matched ? `suggestion correction ${(model.assistant.matchGainDb ?? 0).toFixed(2)} dB${model.assistant.capped ? " (capped)" : ""}` : "raw processed gain"}</p>
+                          </div>}
                           <Button
                             disabled={
                               !model.assistant.proposal.previewReady ||

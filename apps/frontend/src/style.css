@@ -928,6 +928,8 @@ button:active {
 .passage-table caption { text-align: start; margin-bottom: 10px; }
 .passage-table th, .passage-table td { text-align: start; padding: 10px; border-bottom: 1px solid var(--color-border); }
 .passage-table p { margin-top: 12px; }
+.preview-scope { padding: 12px 16px; margin-bottom: 16px; border-left: 2px solid #dbb684; color: #e0c69f; background: #29251f; }
+.assistant-compare { margin: 16px 0; padding: 12px; border: 1px solid var(--color-border); border-radius: 8px; }
 :root[data-large-text="true"] .app { height: auto; overflow: visible; }
 :root[data-large-text="true"] .workspace { display: block; }
 :root[data-large-text="true"] main, :root[data-large-text="true"] aside { overflow: visible; }

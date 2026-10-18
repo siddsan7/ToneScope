@@ -23,7 +23,7 @@ juce::var microscopeSnapshot() const {
 }
 void microscopeCommand(const juce::String& action,const juce::var&) {
     if(action=="microscope.clear"){
-        ++passageRequest;softPassage.reset();hardPassage.reset();passageMeasurements={};passageRevision=0;
+        ++passageRequest;softPassage.reset();hardPassage.reset();passageMeasurements=juce::var{};passageRevision=0;
         passageMessage="Passage marks cleared.";return;
     }
     if(action!="microscope.soft"&&action!="microscope.hard"){setStatus("Unknown microscope command.");return;}
@@ -49,7 +49,7 @@ void updateMicroscope() {
     passageMessage="Measuring both passages with source history and declared delay…";
     auto safe=juce::Component::SafePointer<Main>(this);
     pool.addJob(new Job([safe,audio,soft,hard,token,request]{
-        auto result=tonescope::comparePassages(*audio->dry,*audio->wet,soft,hard,audio->latency);
+        auto result=tonescope::comparePassages(*audio->dry,*audio->wet,soft,hard,audio->latency,audio->dryInitialEnvelopeEnergy,audio->wetInitialEnvelopeEnergy);
         auto signal=[](const tonescope::PassageSignalMetrics& m){
             auto* v=new juce::DynamicObject();v->setProperty("rmsDbfs",20*std::log10(std::max(1e-12,m.rms)));
             v->setProperty("peakDbfs",20*std::log10(std::max(1e-12,m.samplePeak)));

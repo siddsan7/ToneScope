@@ -1,4 +1,12 @@
-# ToneScope native desktop design
+# ToneScope interface design
+
+The current interface embeds dark React/shadcn/Radix instrument controls and Motion inside JUCE's native Windows shell. Space Grotesk and Commit Mono are locally bundled from Free Faces selections. Muted sage identifies dry audio and amber identifies processed audio; labels and dashed lines preserve non-color cues. Waveform selection follows the pointer continuously; reduced motion, forced colors and 100–200% text sizing are supported. See `frontend/README.md` for assets, licenses and the native command boundary.
+
+Native audio, choosers, devices, sessions and exports remain owned by C++. The browser receives bounded measurements and typed commands; it does not process audio or receive assistant credentials. The optional assistant presents predictions separately from measured previews and requires explicit acceptance. Native controls remain the runtime fallback.
+
+The following section documents the original native fallback design. Its historical capture/duration and implementation limits are superseded by `delivery/brain.md` and `delivery/progress.json`.
+
+## Native fallback reference
 
 The design thesis is **a closer listen**: the waveform and spectrum share one large, quiet study surface, while effects remain in a consistent signal-chain inspector. The blue dry trace and amber processed trace are the only strong colors; solid versus interrupted strokes and explicit names also identify them. This is a native JUCE Windows application, not a browser or rendered mockup. Native Windows titlebar, file choosers, device selector, keyboard navigation and JUCE control accessibility provide the platform foundation.
 

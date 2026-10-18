@@ -12,6 +12,7 @@
 #include <tonescope/Engine.h>
 
 #include <tonescope/Session.h>
+#include <tonescope/Publication.h>
 #include <tonescope/ParameterState.h>
 #include "CaptureWorker.h"
 #include "SessionRecovery.h"
@@ -52,6 +53,7 @@ struct Rendered {
     std::vector<float> dryPeaks, wetPeaks;
 
     tonescope::Comparison comparison;
+    double dryInitialEnvelopeEnergy=0,wetInitialEnvelopeEnergy=0;
 
     std::vector<double> drySpectrum, wetSpectrum;
 
@@ -383,7 +385,7 @@ private:
 
     struct CancelableSourceInput final:juce::InputStream {
         juce::FileInputStream input;tonescope::desktop::FileCancel cancel;
-        CancelableSourceInput(const juce::File& file,tonescope::desktop::FileCancel flag):input(file),cancel(std::move(flag)){if(input.failedToOpen())throw std::runtime_error("Cannot open source for digest verification");}
+        CancelableSourceInput(const juce::File& file,tonescope::desktop::FileCancel flag):input(tonescope::session::fileForIo(file)),cancel(std::move(flag)){if(input.failedToOpen())throw std::runtime_error("Cannot open source for digest verification");}
         juce::int64 getTotalLength()override{return input.getTotalLength();}bool isExhausted()override{return input.isExhausted();}
         juce::int64 getPosition()override{return input.getPosition();}bool setPosition(juce::int64 at)override{return input.setPosition(at);}
         int read(void* destination,int bytes)override{if(cancel&&cancel->load(std::memory_order_acquire))throw tonescope::desktop::CancelledFileOperation();return input.read(destination,bytes);}
@@ -635,7 +637,8 @@ private:
             auto window=tonescope::desktop::inspectFile(file.getFullPathName().toStdString(),p,first,last,cancel,progress.get(),band,rms);if(cancel->load())return;
             const auto end=window.windowEnd;const auto measuredEnd=window.measuredEnd;auto comparison=window.comparison;auto result=std::make_shared<Rendered>();result->raw=std::make_shared<tonescope::AudioData>(std::move(window.raw));result->exportWet=std::make_shared<tonescope::AudioData>(std::move(window.wet));result->dry=std::make_shared<tonescope::AudioData>(std::move(window.auditionDry));result->wet=std::make_shared<tonescope::AudioData>(std::move(window.auditionWet));result->latency=window.latency;result->gainReductionHistory=std::move(window.gainReductionHistory);result->bandGainReductionHistory=std::move(window.bandGainReductionHistory);result->gainReductionSamples=std::move(window.gainReductionSamples);result->graphKey=tonescope::session::hashParameters(p)+"|stream|"+digest+"|"+juce::String(first)+"|"+juce::String(static_cast<int>(band));
             auto peaks=[](const tonescope::AudioData& data){std::vector<float> bins(2048,0);for(std::int64_t n=0;n<data.frames();++n)for(const auto& channel:data.samples)bins[static_cast<size_t>(n*2048/data.frames())]=juce::jmax(bins[static_cast<size_t>(n*2048/data.frames())],std::abs(channel[static_cast<size_t>(n)]));return bins;};
-            result->dryPeaks=peaks(*result->dry);result->wetPeaks=peaks(*result->wet);result->comparison=comparison;result->drySpectrum=tonescope::spectrum(*result->dry,0);result->wetSpectrum=tonescope::spectrum(*result->wet,result->latency);result->dryDynamics=tonescope::dynamics(*result->dry);result->wetDynamics=tonescope::dynamics(*result->wet);
+            result->dryInitialEnvelopeEnergy=window.dryInitialEnvelopeEnergy;result->wetInitialEnvelopeEnergy=window.wetInitialEnvelopeEnergy;
+            result->dryPeaks=peaks(*result->dry);result->wetPeaks=peaks(*result->wet);result->comparison=comparison;result->drySpectrum=tonescope::spectrum(*result->dry,0);result->wetSpectrum=tonescope::spectrum(*result->wet,result->latency);result->dryDynamics=tonescope::dynamics(*result->dry,512,result->dryInitialEnvelopeEnergy);result->wetDynamics=tonescope::dynamics(*result->wet,512,result->wetInitialEnvelopeEnergy);
             for(const auto& channel:result->raw->samples)for(float sample:channel)if(std::abs(sample)>16)++result->ingressClamps;
             if(hashSource(file,cancel)!=digest)throw std::runtime_error("Source changed during inspection");
             juce::MessageManager::callAsync([safe,token,result,first,last,end,measuredEnd]{if(!safe||safe->revision!=token)return;safe->detach();safe->source=result->raw;safe->rendered=result;safe->renderedRevision=token;safe->inspectionOffset=first;safe->inspectionEnd=end+result->latency;safe->sourceStep=safe->sourceSampleRate()/safe->deviceRate.load();safe->selectionStart=first;safe->selectionEnd=juce::jmin<std::int64_t>(last,safe->sourceFrameCount()-result->latency);safe->position=static_cast<double>(first);safe->scope.data=result;safe->scope.displayedFirst=static_cast<double>(first)/safe->sourceFrameCount();safe->scope.displayedLast=static_cast<double>(end+result->latency)/safe->sourceFrameCount();safe->scope.fullFrames=safe->sourceFrameCount();safe->busy=false;safe->inspectionProgress.reset();safe->updateMicroscope();safe->attach();
@@ -661,7 +664,13 @@ private:
 
             else {
 
-                result->wet=std::make_shared<tonescope::AudioData>(tonescope::render(*input,p));
+                auto traced=tonescope::renderWithDynamics(*input,p);
+                result->wet=std::make_shared<tonescope::AudioData>(std::move(traced.wet));
+                for(const auto& frame:traced.frames){
+                    result->gainReductionHistory.push_back(frame.gainReductionDb);
+                    result->gainReductionSamples.push_back(frame.dry.sample);
+                    for(size_t bandIndex=0;bandIndex<3;++bandIndex)result->bandGainReductionHistory[bandIndex].push_back(frame.bandGainReductionDb[bandIndex]);
+                }
                 result->exportWet=result->wet;
 
                 auto reference=std::make_shared<tonescope::AudioData>(*input);auto trim=std::pow(10.0,p.inputDb/20.0);for(auto& channel:reference->samples)for(auto& value:channel){if(std::abs(value)>16.0f)++result->ingressClamps;value=(float)(juce::jlimit(-16.0f,16.0f,value)*trim);}result->dry=p.multiband&&p.compressor?std::make_shared<tonescope::AudioData>(tonescope::crossoverReference(*input,p)):reference;
@@ -824,18 +833,20 @@ private:
 
         chooser=std::make_unique<juce::FileChooser>("Export processed WAV and evidence",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("tonescope-wet.wav"),"*.wav");auto safe=juce::Component::SafePointer<Main>(this);auto audio=rendered;auto state=session();auto operationCancel=std::make_shared<std::atomic<bool>>(false);exportCancel=operationCancel;const auto streamed=streamedSource;auto original=sourceFile;auto digest=sourceDigest;auto p=parameters();const auto begin=selectedOnly?selectionStart.load():0;const auto end=selectedOnly?selectionEnd.load():sourceFrameCount();
 
-        chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe,audio,state,streamed,original,digest,p,begin,end,operationCancel](const juce::FileChooser& f){if(!safe||f.getResult()==juce::File{})return;auto file=f.getResult();auto evidencePath=file.withFileExtension("evidence.json");if(evidencePath.exists()||evidencePath==safe->sourceFile){safe->setStatus("Evidence sidecar exists. Choose a new export name to preserve it.");return;}if(file==safe->sourceFile){safe->setStatus("Choose an export path different from the dry source.");return;}safe->setStatus("Exporting processed audio and comparison evidence...");safe->pool.addJob(new Job([safe,audio,state,file,streamed,original,digest,p,begin,end,operationCancel]{try{
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe,audio,state,streamed,original,digest,p,begin,end,operationCancel](const juce::FileChooser& f){if(!safe||f.getResult()==juce::File{})return;auto file=tonescope::session::fileForIo(f.getResult());const bool overwrite=file.existsAsFile();auto evidencePath=file.withFileExtension("evidence.json");if(evidencePath.exists()||evidencePath==tonescope::session::fileForIo(safe->sourceFile)){safe->setStatus("Evidence sidecar exists. Choose a new export name to preserve it.");return;}if(file==tonescope::session::fileForIo(safe->sourceFile)){safe->setStatus("Choose an export path different from the dry source.");return;}safe->setStatus("Exporting processed audio and comparison evidence...");safe->pool.addJob(new Job([safe,audio,state,file,streamed,original,digest,p,begin,end,operationCancel,overwrite]{try{
+                auto evidencePath=file.withFileExtension("evidence.json");tonescope::session::PublicationReservation publication(file,evidencePath);if(evidencePath.exists()||(!overwrite&&file.exists()))throw std::runtime_error("Export destination or evidence appeared; choose a new filename.");
 
                 juce::TemporaryFile temp(file);
                 if(streamed){if(hashSource(original,operationCancel)!=digest)throw std::runtime_error("Source changed before streamed export");tonescope::desktop::exportFileRange(original.getFullPathName().toStdString(),temp.getFile().getFullPathName().toStdString(),p,begin,end,operationCancel);if(hashSource(original,operationCancel)!=digest)throw std::runtime_error("Source changed during streamed export");}
                 else if(begin==0&&end==audio->exportWet->frames())tonescope::writeWav(temp.getFile().getFullPathName().toStdString(),*audio->exportWet);
                 else{tonescope::AudioData slice;slice.sampleRate=audio->exportWet->sampleRate;for(const auto& channel:audio->exportWet->samples)slice.samples.emplace_back(channel.begin()+begin,channel.begin()+end);tonescope::writeWav(temp.getFile().getFullPathName().toStdString(),slice);}
-                if(!temp.overwriteTargetFileWithTemporary())throw std::runtime_error("Could not replace output WAV.");
+                if(!tonescope::session::publishCompleteFile(temp.getFile(),file,overwrite))throw std::runtime_error("Output publication failed or a destination appeared.");
 
                 auto* evidence=new juce::DynamicObject();evidence->setProperty("schema_version",1);evidence->setProperty("session",state);evidence->setProperty("source_rate_hz",audio->dry->sampleRate);evidence->setProperty("frames",(juce::int64)(end-begin));evidence->setProperty("export_start_sample",(juce::int64)begin);evidence->setProperty("export_end_sample",(juce::int64)end);evidence->setProperty("latency_samples",audio->latency);evidence->setProperty("rms_valid",audio->comparison.valid);evidence->setProperty("dry_rms",audio->comparison.dryRms);evidence->setProperty("wet_rms",audio->comparison.wetRms);evidence->setProperty("frozen_match_gain",audio->comparison.gain);evidence->setProperty("residual_rms",audio->comparison.residualRms);evidence->setProperty("export_semantics","Float32 raw processed engine-output interval specified by export_start_sample/export_end_sample; audition band filters, monitor RMS match, boundary fades and safety guard are excluded.");
 
+                evidence->setProperty("artifact_sha256",hashSource(file,operationCancel));evidence->setProperty("graph_sha256",tonescope::session::hashParameters(p));evidence->setProperty("source_sha256",digest);
                 evidence->setProperty("comparison_band",state["ui"]["band"]);evidence->setProperty("comparison_alignment_samples",audio->latency);evidence->setProperty("comparison_filters","Identical branch audition filters at saved crossover frequencies; excluded from exported audio.");
-                if(!file.withFileExtension("evidence.json").replaceWithText(juce::JSON::toString(juce::var(evidence))))throw std::runtime_error("WAV saved but evidence sidecar failed.");
+                juce::TemporaryFile evidenceTemp(evidencePath);if(!evidenceTemp.getFile().replaceWithText(juce::JSON::toString(juce::var(evidence)))||!tonescope::session::publishCompleteFile(evidenceTemp.getFile(),evidencePath,false))throw std::runtime_error("WAV complete but evidence publication failed or a destination appeared.");
 
                 juce::MessageManager::callAsync([safe,file]{if(safe)safe->setStatus("Exported "+file.getFileName()+" and evidence JSON. Raw processed gain on the recorded export interval.");});
 
@@ -857,6 +868,7 @@ private:
     void shutdownAssistant(){}
     void updateAssistant(){}
     void assistantSessionChanged(){}
+    bool assistantPreviewActive()const{return false;}
 #endif
 };
 

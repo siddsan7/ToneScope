@@ -46,7 +46,7 @@ inline juce::String fileHash(const juce::File& file){auto stream=tonescope::sess
 inline juce::String capability(){
  std::array<unsigned char,32> bytes{};
 #if JUCE_WINDOWS
- auto library=LoadLibraryW(L"bcrypt.dll");require(library!=nullptr,"OS cryptographic entropy is unavailable.");
+ auto library=LoadLibraryExW(L"bcrypt.dll",nullptr,LOAD_LIBRARY_SEARCH_SYSTEM32);require(library!=nullptr,"OS cryptographic entropy is unavailable.");
  using Generate=LONG(WINAPI*)(void*,unsigned char*,unsigned long,unsigned long);
  auto generate=reinterpret_cast<Generate>(GetProcAddress(library,"BCryptGenRandom"));
  auto status=generate?generate(nullptr,bytes.data(),(unsigned long)bytes.size(),2):-1;
