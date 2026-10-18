@@ -1,6 +1,6 @@
 # Independent development review
 
-Separate worker contexts reviewed the core/analysis/CLI and desktop integration. These are agent engineering reviews, not human listening, device or accessibility qualification. No public PRs/merges/releases were created.
+Separate worker contexts reviewed the core/analysis/CLI and desktop integration. These are agent engineering reviews, not human listening, device or accessibility qualification. Implementation PRs are public. No GitHub Release or production qualification is claimed.
 
 Findings addressed in integration:
 
@@ -17,3 +17,5 @@ Findings addressed in integration:
 Remaining development limitations are recorded in `progress.json` and `docs/design.md`; no review grants production release approval.
 
 Further independent agent reviews cover exact-head PR1–3 and PR4 integration. Concrete fixes include low-rate preparation, signed interval overflow, phase-compensated crossover, concurrent publication, pinned SDK selection, deep Unicode paths, rollback identity/reparse ancestry, versioned assistant A/B routing, dedicated report validation, stale development evidence, admission/retention and bounded native baseline state. Actual source mutants exercise smoothing/version/authorization guards. Scope findings and rerun logs are retained under `artifacts/integration-review/`; PR comments record exact reviewed heads. Final merging requires passing exact-head Windows/Linux checks. These remain development reviews, not physical/human/live-model qualifications.
+
+Visibility/publication review: GitHub confirms the repository and PRs are public. Earlier wording calling them private was incorrect. The generic CI upload also included unsigned executable bundles; task-created bundles were preserved with hashes locally and removed from public Actions artifacts. CI now allowlists report/source/synthetic evidence and excludes package/broker staging and executable archives. No repository visibility change or GitHub Release was performed.

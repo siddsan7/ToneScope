@@ -28,4 +28,4 @@ Callback observations are opt-in and disabled by default. Timing bins, scoped mi
 
 ## Qualification limits
 
-Physical device lifecycle/round-trip/soak, human listening/accessibility, independently licensed musical data/holdout, signing/licensing choices and clean-machine installation remain required. Linear monitor resampling and discrete transitions need listening/device qualification. No UI screenshot or synthetic numerical suite completes those gates. See `../qualification/`, `../delivery/progress.json` and the exact PR checks for the current delivery status.
+Physical device lifecycle/round-trip/soak, human listening/accessibility, broader musical coverage and independently owned holdout, signing/licensing choices and clean-machine installation remain required. Linear monitor resampling and discrete transitions need listening/device qualification. No UI screenshot or synthetic numerical suite completes those gates. See `../qualification/`, `../delivery/progress.json` and the exact PR checks for the current delivery status.

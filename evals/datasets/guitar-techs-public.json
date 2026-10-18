@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "corpus_id": "guitar-techs-p3-public-regression-v1",
+  "classification": "PUBLIC INSPECTABLE REGRESSION; NOT AN UNSEEN HOLDOUT",
+  "holdout_qualified": false,
+  "source_url": "https://zenodo.org/records/14963133",
+  "metadata_url": "https://zenodo.org/api/records/14963133",
+  "download_url": "https://zenodo.org/api/records/14963133/files/P3_music.zip/content",
+  "license": "CC-BY-4.0",
+  "license_url": "https://creativecommons.org/licenses/by/4.0/",
+  "author_license_and_modality_url": "https://guitar-techs.github.io/",
+  "attribution": "Pedroza, Hegel, et al. Guitar-TECHS: An Electric Guitar Dataset Covering Techniques, Musical Excerpts, Chords and Scales Using a Diverse Array of Hardware. ICASSP 2025, IEEE. DOI 10.1109/ICASSP49660.2025.10887996. CC BY 4.0.",
+  "archive": {"name":"P3_music.zip","bytes":129505089,"md5":"071ba80aecf00f4a31fbd167b3f22198","sha256":"033489e22600751fb5a1633e7d856b901c6782e0486fa02135e830780d9dbfe2"},
+  "maximum_uncompressed_bytes": 1073741824,
+  "internal_notices": "Entire verified archive listing contains no README, LICENSE, COPYING or NOTICE files; official record and author page grant CC BY 4.0 for all data.",
+  "selection": "Two smallest original WAVs in audio/directinput by uncompressed bytes then member path; frozen before test outcomes.",
+  "transform": "Preserve original bytes. Decode independently and re-encode float32 WAV at unchanged rate/channels; test the full originals, both under 30 seconds. No gain normalization. Every derived variant inherits the player/performance groups and public regression split.",
+  "enabled_parameters": {"compressor":true,"drive":true,"oversampling":4,"driveDb":12},
+  "records": [
+    {"member":"P3_music/audio/directinput/directinput_11.wav","bytes":6084690,"crc32":"87ece749","sha256":"0842bfb4e73142205123d6d362ff8f007e277ce022a4e40dd70b824ecb7543d8","frames":1014000,"sample_rate_hz":48000,"channels":2,"player_group":"P3","performance_group":"P3/music_11","split":"public-inspectable-regression"},
+    {"member":"P3_music/audio/directinput/directinput_08.wav","bytes":7872690,"crc32":"6f494781","sha256":"f58cd8dcd68eeec7c9e58839e7161671ba3af9963957e35f1f04a1f2644d3ff3","frames":1312000,"sample_rate_hz":48000,"channels":2,"player_group":"P3","performance_group":"P3/music_08","split":"public-inspectable-regression"}
+  ]
+}

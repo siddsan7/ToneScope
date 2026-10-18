@@ -362,7 +362,7 @@
       "qualification_status": "unqualified_development"
     }
   ],
-  "note": "Specification task IDs are logical work units, not GitHub PR numbers. Actual private delivery PRs below consolidate dependency-compatible slices. Development verification does not imply release qualification.",
+  "note": "Specification task IDs are logical work units, not GitHub PR numbers. Actual delivery PRs below consolidate dependency-compatible slices. Development verification does not imply release qualification.",
   "actual_pull_requests": [
     {
       "number": 1,
@@ -382,7 +382,16 @@
     {
       "number": 4,
       "scope": "Embedded frontend, durable native state, optional assistant and package integration",
-      "state": "draft"
+      "state": "merged",
+      "reviewed_head": "99858518b64d68692f25ce1165db2b017ab5747c",
+      "merge_commit": "9e07e175e705306500376138f4b28d84971142ff",
+      "review_evidence": "https://github.com/siddsan7/ToneScope/pull/4#issuecomment-6245835494"
+    },
+    {
+      "number": 5,
+      "scope": "Delivery records, public CI evidence publication and reproducible public musical DI regression",
+      "state": "Live review/check/merge state is authoritative at the status URL",
+      "status_url": "https://github.com/siddsan7/ToneScope/pull/5"
     }
   ]
 }

@@ -37,12 +37,12 @@ The audio callback performs no file/network access, JSON parsing or model work. 
 
 ## Review history
 
-Private PRs [#1](https://github.com/siddsan7/ToneScope/pull/1), [#2](https://github.com/siddsan7/ToneScope/pull/2) and [#3](https://github.com/siddsan7/ToneScope/pull/3) passed independent agent review and exact-head Windows CI before merge. [#4](https://github.com/siddsan7/ToneScope/pull/4) integrates the embedded frontend and subsequent native/service/package work ; its live status, exact-head checks and independent review comments record the delivery gate. Agent review is identified as such; no human approval is impersonated.
+Public implementation PRs [#1](https://github.com/siddsan7/ToneScope/pull/1), [#2](https://github.com/siddsan7/ToneScope/pull/2) and [#3](https://github.com/siddsan7/ToneScope/pull/3) passed independent agent review and exact-head Windows CI before merge. [#4](https://github.com/siddsan7/ToneScope/pull/4) integrates the embedded frontend and subsequent native/service/package work ; its live status, exact-head checks and independent review comments record the delivery gate. Agent review is identified as such; no human approval is impersonated.
 
 Independent reviews produced concrete regressions: low-rate initialization, extreme signed interval rejection, concurrent output publication, exact SDK selection, deep Windows Unicode paths, rollback version identity and reparse ancestry. Initial failures remain in the development evidence directories. Gates are not weakened to hide a failing implementation.
 
 ## What remains external
 
-Physical interface/laptop lifecycle, callback timing and soak; licensed musical data and an independently owned sequestered holdout; human listening and accessibility; signing/licensing choices and clean-machine installation; and explicitly authorized provider-backed model qualification remain unperformed. Synthetic tests establish their mathematical and protocol assertions. They do not establish preferred tone, human usability, hardware performance or model competence.
+Physical interface/laptop lifecycle, callback timing and soak; broader musical coverage and an independently owned sequestered holdout; human listening and accessibility; signing/licensing choices and clean-machine installation; and explicitly authorized provider-backed model qualification remain unperformed. Synthetic tests establish their mathematical and protocol assertions. They do not establish preferred tone, human usability, hardware performance or model competence.
 
 `delivery/brain.md` is the compact implementation handoff; the full plan and references remain in durable project documentation. The development orchestrator delegates isolated bounded work, integrates it, commissions independent review, and owns the final evidence.
