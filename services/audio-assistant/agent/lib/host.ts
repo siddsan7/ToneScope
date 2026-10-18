@@ -1,0 +1,27 @@
+import { readFile } from 'node:fs/promises';
+import { z } from 'zod';
+import { snapshotSchema } from './contracts.ts';
+import { NativeCliAdapter } from './native-cli.ts';
+import { StateStore } from './store.ts';
+import { GatewayProvider,livePolicySchema } from './gateway-provider.ts';
+import { AssistantService } from './service.ts';
+import { createBroker,listenLoopback } from './broker.ts';
+// Private host-created manifest is the sole path registration surface;
+// Never supplied by the model.
+const config=z.object({executable:z.string(),work_directory:z.string(),state_directory:z.string(),live:livePolicySchema.optional(),port:z.number().int().min(0).max(65535).default(0),assets:z.array(z.object({snapshot:snapshotSchema,source_path:z.string(),baseline_path:z.string(),parameters:z.record(z.string(),z.union([z.number(),z.boolean(),z.array(z.number())]))}).strict()).max(8)}).strict();
+const manifestPath=process.env.TONESCOPE_HOST_MANIFEST;
+const token=process.env.TONESCOPE_BROKER_TOKEN;
+if(!manifestPath||!token)throw Error('Native host manifest and private broker token are required.');
+const c=config.parse(JSON.parse(await readFile(manifestPath,'utf8')));
+const assets=new Map(c.assets.map(a=>[a.snapshot.session_id,a]));
+const native=new NativeCliAdapter(c.executable,async()=>{const fresh=config.parse(JSON.parse(await readFile(manifestPath,'utf8')));
+return new Map(fresh.assets.map(a=>[a.snapshot.session_id,a]));
+},c.work_directory);
+const store=new StateStore(c.state_directory);
+const enableLive=process.env.TONESCOPE_ENABLE_LIVE==='1';
+if(enableLive&&(!c.live||!process.env.AI_GATEWAY_API_KEY))throw Error('live_configuration_and_credentials_required');
+const provider=enableLive?new GatewayProvider(c.live,process.env.AI_GATEWAY_API_KEY!):undefined;
+const service=new AssistantService(native,store,provider,c.live);
+const server=createBroker(service,store,token,new Set(assets.keys()));
+const address=await listenLoopback(server,c.port);
+process.stdout.write(JSON.stringify({schema_version:1,address,provider:enableLive?'gateway':'rules',live_enabled:enableLive})+'\n');

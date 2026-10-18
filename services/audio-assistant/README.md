@@ -1,0 +1,28 @@
+# Optional ToneScope assistant
+
+This separately gated D3 service runs offline by default. Its deterministic rules baseline supports bounded level changes. It reads native measurements, renders a candidate using the actual native CLI, compares it, and returns a revision/hash-bound B.3 proposal. No service or tool applies changes. The native application owns explicit acceptance, stale/hash checks, preview audition, and the single undo transaction. Core audio works when this optional service is absent.
+
+Node 24 and the exact dependencies in package-lock.json are required. Use `npm ci`, `npm run typecheck`, `npm test`, and `npm run build` in this directory. The build compiles all five Eve tools and an inert deny sandbox provider to `.output`; it performs no deployment or model calls. The broker entry is `node --experimental-strip-types agent/lib/host.ts` (`npm start`). A private host manifest and a bearer capability of at least 32 bytes must be provided through `TONESCOPE_HOST_MANIFEST` and `TONESCOPE_BROKER_TOKEN`. Neither belongs in a webview, repository, URL, or log.
+
+The manifest is private native-host configuration, not model input:
+
+```json
+{"executable":"ABSOLUTE_NATIVE_CLI","work_directory":"ABSOLUTE_PRIVATE_PREVIEW_DIR","state_directory":"ABSOLUTE_PRIVATE_HISTORY_DIR","port":0,"assets":[{"snapshot":{"session_id":"session_1","session_revision":1,"source_sha256":"64_lowercase_hex","base_graph_sha256":"64_lowercase_hex","source_handle":"opaque_asset_1","selection_samples":[0,48000],"sample_rate":48000,"parameters":[{"stage_id":"output","parameter_id":"outputDb","unit":"dB","value":0,"min":-24,"max":24}]},"source_path":"ABSOLUTE_HOST_SELECTED_WAV","baseline_path":"ABSOLUTE_NATIVE_BASELINE_WAV","parameters":{"outputDb":0}}]}
+```
+
+`parameters` is the full native engine session parameter object, including enabled stages, order and modes, supplied by the host. `snapshot.parameters` is its authorized continuous-control registry. Paths are resolved only from this private registry. Baseline WAV plus its native `.wav.json` sidecar must represent this revision's graph, original source digest and exact selection. Source and baseline digests are rechecked; registry assets are reread for every operation. A modern native CLI selection baseline carries `selection_samples`, `processed_frames`, and `alignment_samples`. Legacy full-source baseline manifests remain supported. Cropped candidates process from sample zero with matching history, then compare the local cropped buffers.
+
+The service listens on IPv4 loopback and prints its selected port. Every route requires `Authorization: Bearer TOKEN`. Any Origin header is rejected. The token stays in the native host; the webview calls native commands. Endpoints:
+
+- `POST /v1/request`: `{schema_version:1,request_id,session_id,prompt}`; returns the exact B.3 envelope. Request IDs are unique; never reuse them after failure/cancellation.
+- `GET /v1/requests/REQUEST?session_id=SESSION`: redacted persisted result, or 404.
+- `POST /v1/requests/REQUEST/cancel?session_id=SESSION`: body `{}`; cancellation is session-scoped and rejects late results.
+- `DELETE /v1/session?session_id=SESSION`: deletes history and known preview files, cancels active work, and tombstones the session in this process.
+
+The preview ID identifies `work_directory/PREVIEW_ID/preview.wav` for trusted native audition. Native code must rehash this WAV against `preview.audio_sha256` immediately before audition/apply. No file path is returned to the model. The host should rotate session IDs and restart its broker when opening a different project; the startup authorized-session set cannot expand through requests.
+
+For the real native synthetic test, set `TONESCOPE_TEST_CLI` to the local native renderer executable before `npm test`. Without it, that test is explicitly skipped. Test fixtures verify protocol/security only. They are not listening, hardware, DSP qualification, or live-model evidence. Independent evaluator probes measure actual WAV output separately.
+
+See [tool card](../../docs/assistant/tool-card.md), [model card](../../docs/assistant/model-card.md), and [data card](../../docs/assistant/data-card.md).
+
+To configure the dormant Gateway adapter, add a private manifest live object with consent:true,currency:"USD",budget_usd,verified_model,provider_slug,verified_at,input_usd_per_million,output_usd_per_million,pricing_source:"https://ai-gateway.vercel.sh/v1/models". Supply AI_GATEWAY_API_KEY through the native process environment and explicitly set TONESCOPE_ENABLE_LIVE=1 only after user consent. No key is accepted in request JSON. The input and output price fields are per-million-token ceilings, verified against fresh Gateway metadata before a paid attempt. Live is disabled by default even if an unrelated key exists in the environment. Budget reservations persist across broker restarts in budget.json and survive history deletion; the native host must preserve this state directory for the configured budget lifetime.
