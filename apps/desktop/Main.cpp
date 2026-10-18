@@ -17,6 +17,7 @@
 #include "CaptureWorker.h"
 #include "SessionRecovery.h"
 #include "FilePlayback.h"
+#include "CallbackProbe.h"
 #if __has_include("AssistantBridge.h")
 #include "AssistantBridge.h"
 #endif
@@ -397,6 +398,28 @@ private:
     juce::LookAndFeel_V4 look;
 
     juce::AudioDeviceManager devices;tonescope::Engine liveEngine,liveDryEngine;
+    tonescope::desktop::CallbackProbe callbackProbe;tonescope::desktop::CallbackProbe::Calibration callbackProbeCalibration;
+
+    juce::var callbackProfileSnapshot()const {
+        const auto sample=callbackProbe.snapshot();auto* result=new juce::DynamicObject;
+        auto integer=[](std::uint64_t value)->juce::var{if(value>static_cast<std::uint64_t>(std::numeric_limits<juce::int64>::max()))return juce::String(value);return static_cast<juce::int64>(value);};
+        auto put=[&](const char* key,const juce::var& value){result->setProperty(key,value);};
+        put("schema_version",1);put("enabled",sample.enabled);put("consistent",sample.consistent);put("aggregate_overflow",sample.aggregateOverflow);put("count",integer(sample.count));put("elapsed_total_ns",integer(sample.totalNs));put("observed_max_ns",integer(sample.maximumNs));put("scope_deadline_misses",integer(sample.deadlineMisses));put("unknown_nominal_periods",integer(sample.unknownPeriods));put("last_nominal_period_ns",integer(sample.lastPeriodNs));put("minimum_nominal_period_ns",integer(sample.minimumPeriodNs));put("maximum_nominal_period_ns",integer(sample.maximumPeriodNs));
+        auto estimate=[&](unsigned percentile){const auto upper=sample.percentileUpperNs(percentile);return sample.count==0||upper==std::numeric_limits<std::uint64_t>::max()?juce::var{}:integer(upper);};
+        put("p50_upper_ns",estimate(5000));put("p95_upper_ns",estimate(9500));put("p99_upper_ns",estimate(9900));put("p999_upper_ns",estimate(9990));put("p999_open_ended",sample.count>0&&sample.percentileUpperNs(9990)==std::numeric_limits<std::uint64_t>::max());put("insufficientQualificationSampleCount",sample.count<1000);put("qualification_minimum_callback_samples",1000);put("percentiles_are_bin_upper_estimates",true);put("p99_open_ended",sample.count>0&&sample.percentileUpperNs(9900)==std::numeric_limits<std::uint64_t>::max());
+        juce::Array<juce::var> histogram;for(std::size_t i=0;i<tonescope::desktop::CallbackProbe::binCount;++i){auto* bin=new juce::DynamicObject;bin->setProperty("lower_exclusive_ns",i==0?juce::var{}:integer(tonescope::desktop::CallbackProbe::binUpperNs(i-1)));bin->setProperty("upper_inclusive_ns",i+1==tonescope::desktop::CallbackProbe::binCount?juce::var{}:integer(tonescope::desktop::CallbackProbe::binUpperNs(i)));bin->setProperty("count",integer(sample.bins[i]));histogram.add(juce::var(bin));}put("histogram",histogram);
+        put("clock", "std::chrono::steady_clock (QPC on MSVC)");put("clock_is_steady",tonescope::desktop::CallbackProbe::Clock::is_steady);put("clock_nominal_tick_ns",1.e9*tonescope::desktop::CallbackProbe::Clock::period::num/tonescope::desktop::CallbackProbe::Clock::period::den);put("clock_minimum_observed_delta_ns",integer(callbackProbeCalibration.minimumPositiveClockDeltaNs));put("software_calibration_iterations",integer(callbackProbeCalibration.iterations));put("enabled_scope_average_ns",callbackProbeCalibration.enabledScopeAverageNs);put("disabled_scope_average_ns",callbackProbeCalibration.disabledScopeAverageNs);put("fixed_probe_bytes",static_cast<int>(sizeof(callbackProbe)));put("scope_bytes",static_cast<int>(sizeof(tonescope::desktop::CallbackProbe::Scope)));
+        put("aggregation","All callbacks since reset across idle/live/replay and changed settings; reset before a controlled run.");put("scope","Callback body between enabled RAII timestamps; excludes final atomic bookkeeping and wrapper cost.");put("deadline_basis","Actual callback frames / negotiated sample rate: nominal buffer period, not round-trip latency.");put("overhead_context","Current-host software loop benchmark includes whole RAII scope and bookkeeping; no device qualification.");put("qualification","Observed software telemetry only; no hardware timing, round-trip or p99 deadline qualification is inferred.");return juce::var(result);
+    }
+    void setCallbackProfiling(bool enabled){
+        if(callbackProbe.isEnabled()==enabled)return;
+        if(recording.load()){setStatus("Stop capture before changing callback profiling.");return;}
+        retireFilePlayback();detach();callbackProbe.setEnabled(enabled);if(enabled)callbackProbeCalibration=tonescope::desktop::CallbackProbe::calibrate();attach();live.setToggleState(false,juce::dontSendNotification);setStatus(enabled?"Callback profiling enabled. Playback and monitoring stopped; resume explicitly. Results are host software observations.":"Callback profiling disabled. Playback and monitoring remain stopped.");
+    }
+    void resetCallbackProfile(){
+        if(recording.load()){setStatus("Stop capture before resetting callback profiling.");return;}
+        retireFilePlayback();detach();callbackProbe.reset();attach();live.setToggleState(false,juce::dontSendNotification);setStatus("Callback timing counters reset. Playback and monitoring remain stopped.");
+    }
 
     juce::ThreadPool pool{1};std::unique_ptr<juce::FileChooser> chooser;
 
@@ -549,6 +572,7 @@ private:
     void audioDeviceError(const juce::String&) override {playing=false;monitoring=false;if(recording.exchange(false)&&captureWorker)captureWorker->interrupt();deviceFault=true;}
 
     void audioDeviceIOCallbackWithContext(const float* const* ins,int ni,float* const* outs,int no,int frames,const juce::AudioIODeviceCallbackContext&) override {
+        tonescope::desktop::CallbackProbe::Scope callbackTiming(callbackProbe,frames,deviceRate);
 
         juce::ScopedNoDenormals denormals;
 

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "kind": "host_software_callback_probe_microbenchmark",
+  "recorded_at_utc": "2026-10-18T04:14:08.4961279Z",
+  "source_revision_base": "3685f0a05eb5b35435e89afd6ca35ec19c6f9fb1",
+  "tested_header_sha256": "d02d4c26c6f89b2f8a723182010caf5950252db2da6687d7c8df7fa383cd77a1",
+  "tested_test_sha256": "43172923fc8cbf3d79c8fcd5419c096338ecdd8b9f97fb8e6259c571a2f0bd1b",
+  "host": {
+    "os": "Microsoft Windows 10.0.26200",
+    "process_architecture": "X64",
+    "processor_count": 16,
+    "compiler": "Microsoft C/C++",
+    "compiler_file_version": "19.44.35223.0",
+    "language": "C++20",
+    "flags": "/O2 /MD /EHsc",
+    "configuration": "Release"
+  },
+  "measurement": {
+    "iterations": 20000,
+    "enabled_whole_scope_average_ns": 58.73,
+    "disabled_loop_average_ns": 0.3,
+    "minimum_observed_positive_clock_delta_ns": 100,
+    "fixed_probe_storage_bytes": 272,
+    "scope_storage_bytes": 32
+  },
+  "deterministic_assertions": "Passed: counts, strict nominal-period deadline comparison, histogram edges, p99/p99.9 estimates, unknown periods, saturation, disabled/reset behavior, concurrent snapshot consistency, monotonic clock/count and no C++ allocations through record/snapshot/RAII.",
+  "raw_output": "probe_tests.cpp\r\nprobe deterministic checks passed; HOST SOFTWARE BENCHMARK only: enabled scope average 58.73 ns, disabled 0.3 ns, minimum observed clock delta 100 ns, fixed storage 272 bytes, scope storage 32 bytes. No device qualification.",
+  "scope": "Host software loop including RAII scope, bookkeeping and loop cost; no callback DSP or audio device measured by this benchmark.",
+  "audio_device_opened": false,
+  "hardware_qualification": "Unperformed. No p99/p99.9 deadline, real-device timing or round-trip qualification is inferred."
+}
