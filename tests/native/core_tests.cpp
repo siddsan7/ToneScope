@@ -22,6 +22,47 @@ namespace {void require(bool ok,const char* text){if(!ok)throw std::runtime_erro
 void put(std::ofstream& f,unsigned value,int bytes){for(int i=0;i<bytes;++i)f.put(char(value>>(8*i)));}
 void fixture(const std::filesystem::path& path,int format,int bits){std::ofstream f(path,std::ios::binary);int count=bits/8;int data=count*2;f.write("RIFF",4);put(f,36+data,4);f.write("WAVEfmt ",8);put(f,16,4);put(f,format,2);put(f,1,2);put(f,48000,4);put(f,48000*count,4);put(f,count,2);put(f,bits,2);f.write("data",4);put(f,data,4);put(f,0, count);unsigned v=bits==16?0xc000:bits==24?0xc00000:0xc0000000;put(f,v,count);}
 }
+void envelopeHistoryTests() {
+ AudioData full;full.samples.assign(2,std::vector<float>(14400,0));
+ for(auto& ch:full.samples) {
+  std::fill(ch.begin(),ch.begin()+1000,.2f);
+  std::fill(ch.begin()+3000,ch.begin()+6000,.5f);
+  std::fill(ch.begin()+8500,ch.begin()+10000,.8f);
+ }
+ auto wet=full;for(auto& ch:wet.samples)for(float& x:ch)x*=.5f;
+ constexpr int offset=2000;
+ auto window=full,wetWindow=wet;
+ for(auto* audio:{&window,&wetWindow})for(auto& ch:audio->samples)ch.erase(ch.begin(),ch.begin()+offset);
+ const double a=std::exp(-1/(.010*full.sampleRate));double initial=0,wetInitial=0;
+ for(int n=0;n<offset;++n) {
+  double linked=0,wetLinked=0;
+  for(size_t c=0;c<full.samples.size();++c){linked+=double(full.samples[c][n])*full.samples[c][n]/full.samples.size();wetLinked+=double(wet.samples[c][n])*wet.samples[c][n]/wet.samples.size();}
+  initial=a*initial+(1-a)*linked;wetInitial=a*wetInitial+(1-a)*wetLinked;
+ }
+ const auto original=dynamics(full,1),cached=dynamics(window,1,initial);
+ for(size_t i=0;i<cached.size();++i) {
+  require(cached[i].sample+offset==original[i+offset].sample,"cached envelope timestamps map to source position");
+  require(cached[i].envelopeRms==original[i+offset].envelopeRms&&cached[i].rms==original[i+offset].rms&&cached[i].samplePeak==original[i+offset].samplePeak,"seeded cached envelope equals full-source history exactly");
+ }
+ const auto reference=comparePassages(full,wet,{2100,8400},{8100,14400});
+ const auto measured=comparePassages(window,wetWindow,{100,6400},{6100,12400},0,initial,wetInitial);
+ require(reference.valid&&measured.valid&&reference.contrastChangeDb==measured.contrastChangeDb,"seeded passage level contrast unchanged");
+ for(auto pair:{std::pair{reference.soft.dry,measured.soft.dry},std::pair{reference.soft.wet,measured.soft.wet},std::pair{reference.hard.dry,measured.hard.dry},std::pair{reference.hard.wet,measured.hard.wet}}) {
+  const auto& x=pair.first;const auto& y=pair.second;
+  require(x.rms==y.rms&&x.samplePeak==y.samplePeak&&x.crestDb==y.crestDb&&x.envelopePeak==y.envelopePeak,"seeded passage scalar metrics equal full-source metrics");
+  require(x.riseAvailable==y.riseAvailable&&x.decayAvailable==y.decayAvailable&&x.riseAvailable&&x.decayAvailable,"seeded passage crossing availability preserved");
+  require(near(x.riseMs,y.riseMs,1e-10)&&near(x.decayMs,y.decayMs,1e-10),"seeded passage rise and decay equal full-source timing");
+ }
+ AudioData steady;steady.samples.assign(1,std::vector<float>(4800,.5f));
+ const auto initialized=comparePassages(steady,steady,{0,4800},{0,4800},0,.25,.25);
+ require(initialized.valid&&!initialized.soft.dry.riseAvailable&&!initialized.soft.wet.riseAvailable&&initialized.soft.dry.envelopePeak==.5,"initialized window does not fabricate zero-state attack");
+ const auto defaultFrames=dynamics(steady,17),explicitZero=dynamics(steady,17,0);
+ for(size_t i=0;i<defaultFrames.size();++i)require(defaultFrames[i].envelopeRms==explicitZero[i].envelopeRms,"default envelope remains zero initialized");
+ for(double invalid:{-1.,std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()}) {
+  bool rejected=false;try{dynamics(steady,17,invalid);}catch(const std::invalid_argument&){rejected=true;}require(rejected,"invalid dynamics initial energy rejected");
+  require(!comparePassages(steady,steady,{0,100},{100,200},0,invalid,0).valid&&!comparePassages(steady,steady,{0,100},{100,200},0,0,invalid).valid,"invalid passage initial energies rejected");
+ }
+}
 void passageDynamicsTests() {
  auto source=sine(2049,997,.4f);Parameters p;p.compressor=p.equalizer=p.drive=true;p.thresholdDb=-30;p.ratio=4;p.lowDb=3;
  for(int factor:{1,2,4})for(bool bands:{false,true}) {
@@ -211,6 +252,7 @@ int main(){try {
 
  AudioData lowRate;lowRate.sampleRate=8000;lowRate.samples={{.125f,.25f,-.5f}};Parameters lowParams;lowParams.toneHz=3200;require(render(lowRate,lowParams).samples==lowRate.samples,"explicit valid low-rate configuration prepares without default-frequency rejection");
 
+ envelopeHistoryTests();
  passageDynamicsTests();
  faustStageTests();
  microscopeTests();

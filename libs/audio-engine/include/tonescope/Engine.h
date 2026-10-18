@@ -67,7 +67,9 @@ struct DynamicsFrame {
     double rms = 0, samplePeak = 0, envelopeRms = 0;
 };
 // Linked stereo energy, 10 ms one-pole RMS detector; finite data required.
-std::vector<DynamicsFrame> dynamics(const AudioData&, int hop = 512);
+// initialEnergy is linked mean-squared detector state before audio sample zero;
+// cached windows must supply the exact preceding state. Finite and >=0 required.
+std::vector<DynamicsFrame> dynamics(const AudioData&, int hop = 512, double initialEnergy = 0);
 struct ProcessingDynamicsFrame {
     DynamicsFrame dry, wet; // source-end sample; wet measured at sample + latency
     bool wetAvailable = false; // final hop can lack delayed output
@@ -102,8 +104,10 @@ struct PassageComparison {
 // Both manual selections must have >=2 available aligned samples. Nonfinite
 // data, shape/rate mismatch or invalid selections return valid=false.
 // Level ratios and crest are unavailable below 1e-9 RMS; absent 10/90 percent
-// crossings are unavailable. No perceptual loudness/onset claims are implied.
+// crossings are unavailable. Initial energies precede dry/wet sample zero,
+// before alignment; each must be finite and >=0. No loudness/onset claims.
 PassageComparison comparePassages(const AudioData& dry, const AudioData& wet,
-    SampleInterval soft, SampleInterval hard, int wetLatencySamples = 0);
+    SampleInterval soft, SampleInterval hard, int wetLatencySamples = 0,
+    double dryInitialEnergy = 0, double wetInitialEnergy = 0);
 
 }

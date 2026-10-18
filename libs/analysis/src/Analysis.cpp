@@ -73,11 +73,11 @@ AudioData crossoverReference(const AudioData& source,const Parameters& p) {
  return out;
 }
 namespace {
-std::vector<DynamicsFrame> dynamicsOffset(const AudioData& source,int hop,int offset) {
- if(!shape(source)||hop<1||hop>1048576||offset<0)throw std::invalid_argument("invalid dynamics input/hop");
+std::vector<DynamicsFrame> dynamicsOffset(const AudioData& source,int hop,int offset,double initialEnergy=0) {
+ if(!shape(source)||hop<1||hop>1048576||offset<0||!std::isfinite(initialEnergy)||initialEnergy<0)throw std::invalid_argument("invalid dynamics input/hop");
  std::vector<DynamicsFrame> frames;
  const double a=std::exp(-1/(.010*source.sampleRate));
- double envelope=0,energy=0,peak=0;int count=0;
+ double envelope=initialEnergy,energy=0,peak=0;int count=0;
  for(std::int64_t n=0;n<source.frames();++n) {
   double linked=0,instantPeak=0;
   for(const auto& channel:source.samples) {
@@ -94,11 +94,11 @@ std::vector<DynamicsFrame> dynamicsOffset(const AudioData& source,int hop,int of
  }
  return frames;
 }
-PassageSignalMetrics passageSignal(const AudioData& source,SampleInterval interval,int offset) {
+PassageSignalMetrics passageSignal(const AudioData& source,SampleInterval interval,int offset,double initialEnergy) {
  PassageSignalMetrics m;
  const auto start=interval.start+offset,end=interval.end+offset;
  const double a=std::exp(-1/(.010*source.sampleRate));
- double envelope=0,energy=0;std::int64_t peakAt=start;
+ double envelope=initialEnergy,energy=0;std::int64_t peakAt=start;
  for(std::int64_t n=0;n<end;++n) {
   double linked=0,peak=0;
   for(const auto& channel:source.samples) {const double x=channel[n];linked+=x*x/source.samples.size();peak=std::max(peak,std::abs(x));}
@@ -114,7 +114,7 @@ PassageSignalMetrics passageSignal(const AudioData& source,SampleInterval interv
  if(m.envelopePeak<1e-9)return m;
  // Full-history detector, then interpolated threshold crossings wholly inside
  // the manually selected interval. Pre-existing energy is never reset at start.
- envelope=0;double prior=0,riseLow=-1,riseHigh=-1,decayHigh=-1,decayLow=-1;
+ envelope=initialEnergy;double prior=std::sqrt(initialEnergy),riseLow=-1,riseHigh=-1,decayHigh=-1,decayLow=-1;
  const double low=.1*m.envelopePeak,high=.9*m.envelopePeak;
  auto crossing=[](std::int64_t n,double before,double after,double threshold) {
   return double(n-1)+(threshold-before)/(after-before);
@@ -123,7 +123,7 @@ PassageSignalMetrics passageSignal(const AudioData& source,SampleInterval interv
   double linked=0;for(const auto& channel:source.samples){const double x=channel[n];linked+=x*x/source.samples.size();}
   envelope=a*envelope+(1-a)*linked;const double current=std::sqrt(envelope);
   if(n>=start) {
-   // Include the known zero state immediately before source sample zero.
+   // Include the supplied detector state immediately before window sample zero.
    const bool boundaryAvailable=n>start||start==0;
    if(boundaryAvailable&&n<=peakAt) {
     if(riseLow<0&&prior<low&&current>=low)riseLow=crossing(n,prior,current,low)+1;
@@ -143,7 +143,7 @@ PassageSignalMetrics passageSignal(const AudioData& source,SampleInterval interv
  return m;
 }
 }
-std::vector<DynamicsFrame> dynamics(const AudioData& source,int hop) {return dynamicsOffset(source,hop,0);}
+std::vector<DynamicsFrame> dynamics(const AudioData& source,int hop,double initialEnergy) {return dynamicsOffset(source,hop,0,initialEnergy);}
 DynamicsRender renderWithDynamics(const AudioData& source,const Parameters& p,int hop,int block) {
  std::string error;
  if(!shape(source)||hop<1||hop>1048576||block<1||block>1048576||!validate(p,source.sampleRate,error))
@@ -173,13 +173,13 @@ DynamicsRender renderWithDynamics(const AudioData& source,const Parameters& p,in
  }
  return result;
 }
-PassageComparison comparePassages(const AudioData& dry,const AudioData& wet,SampleInterval soft,SampleInterval hard,int latency) {
+PassageComparison comparePassages(const AudioData& dry,const AudioData& wet,SampleInterval soft,SampleInterval hard,int latency,double dryInitialEnergy,double wetInitialEnergy) {
  PassageComparison result;
- if(!shape(dry)||!shape(wet)||dry.sampleRate!=wet.sampleRate||dry.samples.size()!=wet.samples.size()||latency<0)return result;
+ if(!shape(dry)||!shape(wet)||dry.sampleRate!=wet.sampleRate||dry.samples.size()!=wet.samples.size()||latency<0||!std::isfinite(dryInitialEnergy)||dryInitialEnergy<0||!std::isfinite(wetInitialEnergy)||wetInitialEnergy<0)return result;
  for(auto interval:{soft,hard})if(interval.start<0||interval.end<interval.start||interval.end-interval.start<2||interval.end>dry.frames()||interval.end>wet.frames()-latency)return result;
  for(const auto* audio:{&dry,&wet})for(const auto& channel:audio->samples)for(float x:channel)if(!std::isfinite(x))return result;
  auto measure=[&](SampleInterval interval) {
-  PassageMetrics m;m.dry=passageSignal(dry,interval,0);m.wet=passageSignal(wet,interval,latency);
+  PassageMetrics m;m.dry=passageSignal(dry,interval,0,dryInitialEnergy);m.wet=passageSignal(wet,interval,latency,wetInitialEnergy);
   m.rmsChangeAvailable=m.dry.rms>=1e-9&&m.wet.rms>=1e-9;
   if(m.rmsChangeAvailable)m.rmsChangeDb=20*std::log10(m.wet.rms/m.dry.rms);
   return m;
