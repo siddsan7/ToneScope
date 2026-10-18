@@ -1,0 +1,292 @@
+{
+  "schema_version": 1,
+  "base_commit": "22fe89a5d2c27e6ef2ba2d4f03433dfa4891bca5",
+  "working_tree_dirty": true,
+  "files": [
+    {
+      "path": ".github/PULL_REQUEST_TEMPLATE.md",
+      "sha256": "a54c41c2fe15e5c895de1a225313eb75db0626c9cd73fd6559da6597d168815f",
+      "bytes": 414
+    },
+    {
+      "path": ".github/workflows/windows.yml",
+      "sha256": "8a7094debc31c09387cc8b1eedace39f0a1eab8c463aca1ee35a2e33d890a53b",
+      "bytes": 918
+    },
+    {
+      "path": ".gitignore",
+      "sha256": "6943b0444b5c2a2aecf61bd4d8486a46e79a02668cd33d102ab4e57b12c9f4f5",
+      "bytes": 77
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "25c0c53e0372b460da0d48b957420cca9e83f252b2789ba39d90434cf2629dd0",
+      "bytes": 812
+    },
+    {
+      "path": "CMakeLists.txt",
+      "sha256": "ea3810479eca635c2e0cb8c629587597e483de3fd7209da0c0a577078f35b8c7",
+      "bytes": 2064
+    },
+    {
+      "path": "CMakePresets.json",
+      "sha256": "15db9bd5fbcfb34be0d1f0e07d156d2cca9897ad0d2cbaae477b137310bcd8d2",
+      "bytes": 507
+    },
+    {
+      "path": "CODEOWNERS",
+      "sha256": "e92ac85118e855c4c23b138e1fc123738cc23e62552b75757eae833a32b8ed36",
+      "bytes": 160
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "sha256": "7b28a9d52f752d8f87f86c1d344539db74859338ede1810a529c0df265e31159",
+      "bytes": 963
+    },
+    {
+      "path": "README.md",
+      "sha256": "a1ccba583cadb75cc40f1c18692c5485a22e40fe2e5c1836f39a74972ce488f6",
+      "bytes": 3886
+    },
+    {
+      "path": "SECURITY.md",
+      "sha256": "3ff8fc86d2c6f3dae4eed8656436b51f943ed472376ece73d71500a3ef66e0ee",
+      "bytes": 691
+    },
+    {
+      "path": "apps/desktop/Main.cpp",
+      "sha256": "cd56d036bf0f56da51780fdda4719bda6a599bf0dcdf0ee81b4790e5fa8cb695",
+      "bytes": 47715
+    },
+    {
+      "path": "delivery/brain.md",
+      "sha256": "ab5ecbbcb2c5e294c2d51bb4882767d8c29724dae50fea89962047b0c85a672a",
+      "bytes": 4511
+    },
+    {
+      "path": "delivery/pr-manifest.json",
+      "sha256": "d714115c2350c31f420d205b2054a528b01b48608dbbd1339ded7c69a0a3dc1d",
+      "bytes": 6287
+    },
+    {
+      "path": "delivery/progress.json",
+      "sha256": "0a3c08629d74f0f7d1f2e11be8e53255f509bf08b352616426f0f342b664eabe",
+      "bytes": 7934
+    },
+    {
+      "path": "delivery/review.md",
+      "sha256": "b929ba6097101afefe52718377fc978065d9f962350308c3db183e0e31661847",
+      "bytes": 1694
+    },
+    {
+      "path": "dependencies.lock.json",
+      "sha256": "79a78b569de5f47f2df025371730ca930db40aae6bf4fc3f15cd871edbd5fc04",
+      "bytes": 709
+    },
+    {
+      "path": "docs/adr/README.md",
+      "sha256": "e4579ea2fbc19f27c89170a0e252477f2e862a24b79c58cae567555919de4e5f",
+      "bytes": 1900
+    },
+    {
+      "path": "docs/design.md",
+      "sha256": "0bac2d4b94cabffd05c75596fca8d60e653de15840900732079993428bbefa55",
+      "bytes": 9048
+    },
+    {
+      "path": "docs/dsp/faust-maths-license.txt",
+      "sha256": "064b1dd04ceb42ee57a15cdd6325aa973af63e8f19fbd95bedc834aeaeb37d80",
+      "bytes": 1738
+    },
+    {
+      "path": "docs/dsp/faust-notices.md",
+      "sha256": "d620d2ad04d65268c7da8cca3068b7a8cbe3cb8bb3dc045102a25b6eb3ea9f11",
+      "bytes": 1005
+    },
+    {
+      "path": "docs/dsp/native-core.md",
+      "sha256": "80021d38c8bf96772d02e6edf7b0271a5d53ededb7968bd57b300a88d6a1f7ae",
+      "bytes": 4018
+    },
+    {
+      "path": "docs/learning/00-start-here.md",
+      "sha256": "24b8724b5abc9746da5efe889944de43b703d745e74005f043f0f3f73329f11e",
+      "bytes": 4326
+    },
+    {
+      "path": "docs/licenses/JUCE-LICENSE.md",
+      "sha256": "6a2be1b029793e470baeae77b43856326bff654c89c3ab387a641e68242aa847",
+      "bytes": 2771
+    },
+    {
+      "path": "docs/licenses/JUCE.spdx.json",
+      "sha256": "5518e3db7131555793eadebd856a4517bc25ab82d61214cfa987aa0db1529cbe",
+      "bytes": 78461
+    },
+    {
+      "path": "docs/memory/README.md",
+      "sha256": "75942df31475cf0f8d68608ba2e96f4312de430515ea3c7ac9f8ef77330e7864",
+      "bytes": 780
+    },
+    {
+      "path": "docs/memory/implementation-plan.md",
+      "sha256": "d6a90cde79907f8d0ffc0133569a990487c80483e08bcf8fa17226176f2c1f96",
+      "bytes": 70957
+    },
+    {
+      "path": "dsp/faust/drive.dsp",
+      "sha256": "e6ece3c0d91acdea95643092dbc61a34af570f6881dca673e2786d240608eed7",
+      "bytes": 183
+    },
+    {
+      "path": "dsp/faust/verify-generated.ps1",
+      "sha256": "afe4911a74e4120914c443d786f38461781ecebfa584a8da090027217e153179",
+      "bytes": 973
+    },
+    {
+      "path": "dsp/generated/ToneScopeDrive.h",
+      "sha256": "bcf8a8f8bd963a62ec2c52642770df47ade708e6cb54918e990f556dae7b011e",
+      "bytes": 3202
+    },
+    {
+      "path": "dsp/generated/manifest.json",
+      "sha256": "aa3b1c99492b894ef7c026e8792a4ba37d0216d2e87f9768d8a5e31fd2bd07d5",
+      "bytes": 319
+    },
+    {
+      "path": "evals/.gitignore",
+      "sha256": "e929a75596a106fd258abd705e5590d171b30b8ba47285e1b4fcdb203cc8c602",
+      "bytes": 20
+    },
+    {
+      "path": "evals/README.md",
+      "sha256": "7b756af9c0b04893dc243d2c3a368cdb032de0595fa19cc67b7dc8d9cffcf483",
+      "bytes": 3251
+    },
+    {
+      "path": "evals/coverage.json",
+      "sha256": "ac1363f733d197af0112974fd2602ca96248f729ba4dc4d975c92fc80cfaf463",
+      "bytes": 1030
+    },
+    {
+      "path": "evals/oracles.py",
+      "sha256": "7babf0f1aeced3573991bd864e7d9d9cce8776d4343b5581d2824c84395a17c5",
+      "bytes": 4221
+    },
+    {
+      "path": "evals/release_check.py",
+      "sha256": "577aa8c81dc974be6f6160bf9857fb8a47c6f3e24923cf53e0b6650caf507070",
+      "bytes": 10328
+    },
+    {
+      "path": "evals/run.py",
+      "sha256": "fc4a4c7513fe297d601bf7d338ff33c0ef010ad638a8536c8bb6844aef3e120e",
+      "bytes": 18507
+    },
+    {
+      "path": "libs/analysis/src/Analysis.cpp",
+      "sha256": "fbff90edaf761ca0a99704bc42a21d0fec1212483727df1757435fb9322c2d91",
+      "bytes": 2964
+    },
+    {
+      "path": "libs/audio-engine/include/tonescope/Engine.h",
+      "sha256": "1230068d101c1c3b43a8362f91fdb86ccebb610b0296ddefdb925fb9e390bdd2",
+      "bytes": 1971
+    },
+    {
+      "path": "libs/audio-engine/src/Engine.cpp",
+      "sha256": "1167bc5992d7866e797485fbfc4c92eaa03a1f2266410ec60b62e21b451a2981",
+      "bytes": 6196
+    },
+    {
+      "path": "libs/audio-engine/src/FaustDrive.h",
+      "sha256": "e0a9da51acfdddcfc32ecd2e2b13b44022bea1ea01d19f05128aa91d6bb6bd54",
+      "bytes": 400
+    },
+    {
+      "path": "libs/audio-engine/src/Wav.cpp",
+      "sha256": "6fbe20af4830500382d3fc3949cd618cf2c6aa75db380c1877f7125aeada97f7",
+      "bytes": 5110
+    },
+    {
+      "path": "libs/contracts/parameters.json",
+      "sha256": "fa3fdc46c336a626f15edbd43322cf126a0f75c9e1c591600dd93d45ba0b98c3",
+      "bytes": 3053
+    },
+    {
+      "path": "libs/contracts/session.schema.json",
+      "sha256": "63d60acda4c7f42d568ec7402f0c41822e390bd20e765ef7d470fbcc99187a1b",
+      "bytes": 3830
+    },
+    {
+      "path": "libs/session/include/tonescope/Session.h",
+      "sha256": "0deaa6ade5a21ef015d66f6cdb87c4e6e4c763fb17956e3cbb2f5d0335506494",
+      "bytes": 4912
+    },
+    {
+      "path": "qualification/README.md",
+      "sha256": "02f05e02d250448acc0df93da3537b23cb01b86fb812c7a84edfdddd018929a2",
+      "bytes": 3195
+    },
+    {
+      "path": "qualification/profiles/windows-interface.json",
+      "sha256": "c296e21a1f39d8223b59b9d48454b1cf9cd57b22fdb929ea825273c74e04a0e0",
+      "bytes": 486
+    },
+    {
+      "path": "releases/README.md",
+      "sha256": "3f5d171f2796482ec6fac44a19fe9675dd8ccb45310eb89fde1efd9bb258c720",
+      "bytes": 1623
+    },
+    {
+      "path": "releases/release-manifest.schema.json",
+      "sha256": "f9f5935b0edbe682303530649bc7953da0b1f51c02c1d1d38d4d296405599294",
+      "bytes": 3988
+    },
+    {
+      "path": "scripts/bootstrap.ps1",
+      "sha256": "d121fa04136c8b9b2727abb9d78fc9b0a2d45226ddef0a4ff2ebc4079b4eed17",
+      "bytes": 1114
+    },
+    {
+      "path": "scripts/package-dev.ps1",
+      "sha256": "68315e18847f22024f0bfe3b8390b8a697c699b45dd6508792902698ece431f7",
+      "bytes": 2094
+    },
+    {
+      "path": "scripts/tonescope.ps1",
+      "sha256": "a0c900d5a9ab4f114081cb1c820d1fb5100622852eecc99d9a796026050010b2",
+      "bytes": 841
+    },
+    {
+      "path": "scripts/update-foundation.py",
+      "sha256": "648fa91cd96b9e65be473b08737580b3f01e6a497cf17166d7b087725814675b",
+      "bytes": 3842
+    },
+    {
+      "path": "tests/integration/test_evaluation.py",
+      "sha256": "86ae61b5a297e7b582b0e643924a33fdd5fc8f9d2922ca4cf6736b9f4e410745",
+      "bytes": 8090
+    },
+    {
+      "path": "tests/integration/test_native_boundaries.py",
+      "sha256": "0f1409a2beeba2d698b7524783355cdfec5d8e7015156bcfd78594a8eaa9befe",
+      "bytes": 2958
+    },
+    {
+      "path": "tests/native/core_tests.cpp",
+      "sha256": "d0e19974b9aaabceb47dfe2de3bd956ee7440c6615ebd315f658d960a284a81c",
+      "bytes": 6498
+    },
+    {
+      "path": "tools/render-cli/Main.cpp",
+      "sha256": "b59a4bbebf9768391fa5bf5e7973e2e69741a86fb09768212a92b53901cf7323",
+      "bytes": 7326
+    },
+    {
+      "path": ".gitattributes",
+      "sha256": "1a1dbe176bc233b499d35a57db7513f2941c99ab9759f177830c9149be99005b",
+      "bytes": 66
+    }
+  ]
+}

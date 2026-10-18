@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "profile_id": "windows-interface-unqualified-v1",
+  "status": "blocked",
+  "supported_os": "Windows 11 x64",
+  "cpu": null,
+  "ram_gib": null,
+  "os_build": null,
+  "power_policy": null,
+  "audio_backend": null,
+  "device": null,
+  "driver_version": null,
+  "compiler_flags": null,
+  "matrix": {"sample_rates_hz": [44100, 48000, 96000], "buffer_frames": [128, 256, 512]},
+  "reason": "Template only. Physical interface and dedicated measurements required."
+}

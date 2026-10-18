@@ -1,0 +1,302 @@
+{
+  "schema_version": 1,
+  "base_commit": "22fe89a",
+  "tasks": [
+    {
+      "id": "PR-00",
+      "title": "Repository charter",
+      "depends_on": [],
+      "status": "verification",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-01",
+      "title": "Reproducible toolchain",
+      "depends_on": [
+        "PR-00"
+      ],
+      "status": "verification",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-02",
+      "title": "Contracts and parameter registry",
+      "depends_on": [
+        "PR-01"
+      ],
+      "status": "verification",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-03",
+      "title": "Evaluation skeleton",
+      "depends_on": [
+        "PR-02"
+      ],
+      "status": "verification",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-04",
+      "title": "Headless engine and renderer",
+      "depends_on": [
+        "PR-02",
+        "PR-03"
+      ],
+      "status": "verification",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-05",
+      "title": "Windows live device shell",
+      "depends_on": [
+        "PR-04"
+      ],
+      "status": "in_progress",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-06",
+      "title": "File transport and dry recorder",
+      "depends_on": [
+        "PR-04",
+        "PR-05"
+      ],
+      "status": "in_progress",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-07",
+      "title": "EQ and smooth parameters",
+      "depends_on": [
+        "PR-04"
+      ],
+      "status": "verification",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-08",
+      "title": "Compressor",
+      "depends_on": [
+        "PR-04"
+      ],
+      "status": "verification",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-09",
+      "title": "Oversampled overdrive",
+      "depends_on": [
+        "PR-07"
+      ],
+      "status": "in_progress",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-10",
+      "title": "Metering and analysis transport",
+      "depends_on": [
+        "PR-04"
+      ],
+      "status": "verification",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-11",
+      "title": "Integrated effects interface",
+      "depends_on": [
+        "PR-05",
+        "PR-06",
+        "PR-07",
+        "PR-08",
+        "PR-09",
+        "PR-10"
+      ],
+      "status": "verification",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-12",
+      "title": "Fair A/B and alignment",
+      "depends_on": [
+        "PR-09",
+        "PR-10",
+        "PR-11"
+      ],
+      "status": "verification",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-13",
+      "title": "Time/frequency microscope",
+      "depends_on": [
+        "PR-10",
+        "PR-12"
+      ],
+      "status": "in_progress",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-14",
+      "title": "Residual and dynamics views",
+      "depends_on": [
+        "PR-08",
+        "PR-12",
+        "PR-13"
+      ],
+      "status": "in_progress",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-15",
+      "title": "Three-band processing",
+      "depends_on": [
+        "PR-07",
+        "PR-08",
+        "PR-12"
+      ],
+      "status": "planned",
+      "evidence": []
+    },
+    {
+      "id": "PR-16",
+      "title": "Reorderable graph",
+      "depends_on": [
+        "PR-09",
+        "PR-15"
+      ],
+      "status": "in_progress",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-17",
+      "title": "Sessions export and recovery",
+      "depends_on": [
+        "PR-13",
+        "PR-14",
+        "PR-15",
+        "PR-16"
+      ],
+      "status": "in_progress",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-18",
+      "title": "Accessible interaction and usability",
+      "depends_on": [
+        "PR-17"
+      ],
+      "status": "in_progress",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-19",
+      "title": "Adversarial and performance hardening",
+      "depends_on": [
+        "PR-16",
+        "PR-17"
+      ],
+      "status": "in_progress",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    },
+    {
+      "id": "PR-20",
+      "title": "Windows release packaging",
+      "depends_on": [
+        "PR-18",
+        "PR-19"
+      ],
+      "status": "planned",
+      "evidence": []
+    },
+    {
+      "id": "PR-21",
+      "title": "AI tool contracts and fixtures",
+      "depends_on": [
+        "PR-03",
+        "PR-17"
+      ],
+      "status": "planned",
+      "evidence": []
+    },
+    {
+      "id": "PR-22",
+      "title": "Assistant service and UI",
+      "depends_on": [
+        "PR-21"
+      ],
+      "status": "planned",
+      "evidence": []
+    },
+    {
+      "id": "PR-23",
+      "title": "AI evaluation and ablations",
+      "depends_on": [
+        "PR-22"
+      ],
+      "status": "planned",
+      "evidence": []
+    },
+    {
+      "id": "PR-24",
+      "title": "AI qualification",
+      "depends_on": [
+        "PR-20",
+        "PR-23"
+      ],
+      "status": "planned",
+      "evidence": []
+    },
+    {
+      "id": "PR-25",
+      "title": "Portfolio evidence and learning",
+      "depends_on": [
+        "PR-20",
+        "PR-24"
+      ],
+      "status": "in_progress",
+      "evidence": [
+        "delivery/progress.json"
+      ]
+    }
+  ],
+  "note": "Task IDs from supplied specification; no GitHub PRs or merges have been created. Verification is development-level, not release completion."
+}

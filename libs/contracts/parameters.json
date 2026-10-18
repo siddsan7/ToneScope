@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "sample_rate_hz": [
+    44100,
+    48000,
+    96000
+  ],
+  "parameters": [
+    {
+      "id": "inputDb",
+      "minimum": -24,
+      "maximum": 24,
+      "default": 0,
+      "unit": "dB",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": null
+    },
+    {
+      "id": "thresholdDb",
+      "minimum": -60,
+      "maximum": 0,
+      "default": -18,
+      "unit": "dBFS",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": null
+    },
+    {
+      "id": "ratio",
+      "minimum": 1,
+      "maximum": 20,
+      "default": 4,
+      "unit": "ratio",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": null
+    },
+    {
+      "id": "attackMs",
+      "minimum": 0.1,
+      "maximum": 100,
+      "default": 10,
+      "unit": "ms",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": null
+    },
+    {
+      "id": "releaseMs",
+      "minimum": 10,
+      "maximum": 2000,
+      "default": 150,
+      "unit": "ms",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": null
+    },
+    {
+      "id": "kneeDb",
+      "minimum": 0,
+      "maximum": 24,
+      "default": 6,
+      "unit": "dB",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": null
+    },
+    {
+      "id": "makeupDb",
+      "minimum": -24,
+      "maximum": 24,
+      "default": 0,
+      "unit": "dB",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": null
+    },
+    {
+      "id": "lowDb",
+      "minimum": -18,
+      "maximum": 18,
+      "default": 0,
+      "unit": "dB",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": null
+    },
+    {
+      "id": "midDb",
+      "minimum": -18,
+      "maximum": 18,
+      "default": 0,
+      "unit": "dB",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": null
+    },
+    {
+      "id": "highDb",
+      "minimum": -18,
+      "maximum": 18,
+      "default": 0,
+      "unit": "dB",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": null
+    },
+    {
+      "id": "midHz",
+      "minimum": 20,
+      "maximum": 20000,
+      "default": 1000,
+      "unit": "Hz",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": "Hz values <= 0.45 * sample rate"
+    },
+    {
+      "id": "midQ",
+      "minimum": 0.2,
+      "maximum": 10,
+      "default": 0.707,
+      "unit": "Q",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": null
+    },
+    {
+      "id": "driveDb",
+      "minimum": 0,
+      "maximum": 36,
+      "default": 6,
+      "unit": "dB",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": null
+    },
+    {
+      "id": "toneHz",
+      "minimum": 20,
+      "maximum": 20000,
+      "default": 5000,
+      "unit": "Hz",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": "Hz values <= 0.45 * sample rate"
+    },
+    {
+      "id": "outputDb",
+      "minimum": -24,
+      "maximum": 24,
+      "default": 0,
+      "unit": "dB",
+      "smoothing_ms": 15,
+      "sample_rate_constraint": null
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "generator": "Faust",
+  "version": "2.88.0",
+  "source": "dsp/faust/drive.dsp",
+  "output": "dsp/generated/ToneScopeDrive.h",
+  "arguments": ["-lang", "cpp", "-light", "-cn", "ToneScopeDrive"],
+  "scope": "Generated memoryless tanh waveshaper; compressor, EQ and drive surrounding filters are handwritten C++20"
+}

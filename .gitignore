@@ -1,0 +1,8 @@
+/.tools/
+/.deps/
+/.worktrees/
+/build/
+/artifacts/
+__pycache__/
+*.pyc
+/.venv/

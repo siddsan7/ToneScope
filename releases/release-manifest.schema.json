@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tonescope:release-manifest:v1",
+  "title": "ToneScope release evidence manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product",
+    "version",
+    "edition",
+    "commit_sha",
+    "unsigned_payload",
+    "packaged_artifact",
+    "toolchain",
+    "dependencies",
+    "dsp_generator",
+    "build_flags",
+    "supported_profiles",
+    "required_suites",
+    "holdout_manifests",
+    "manual_qualification",
+    "open_defects",
+    "blocked_checks",
+    "notices",
+    "sbom",
+    "signature",
+    "attestation",
+    "baseline_changes",
+    "reviewer_decisions",
+    "installation_instructions",
+    "rollback_instructions",
+    "shipped_requirements",
+    "critical_contract_boundaries"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "product": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "edition": {
+      "type": "string",
+      "minLength": 1
+    },
+    "commit_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "unsigned_payload": {
+      "$ref": "#/$defs/file_ref"
+    },
+    "packaged_artifact": {
+      "$ref": "#/$defs/file_ref"
+    },
+    "toolchain": {
+      "type": "object"
+    },
+    "dependencies": {
+      "type": "array"
+    },
+    "dsp_generator": {
+      "type": "object"
+    },
+    "build_flags": {
+      "type": "array"
+    },
+    "supported_profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/file_ref"
+      }
+    },
+    "required_suites": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/file_ref"
+      }
+    },
+    "holdout_manifests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/file_ref"
+      }
+    },
+    "manual_qualification": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/file_ref"
+      }
+    },
+    "open_defects": {
+      "type": "array"
+    },
+    "blocked_checks": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "notices": {
+      "$ref": "#/$defs/file_ref"
+    },
+    "sbom": {
+      "$ref": "#/$defs/file_ref"
+    },
+    "signature": {
+      "type": "object",
+      "required": [
+        "status",
+        "evidence"
+      ],
+      "properties": {
+        "status": {
+          "const": "verified"
+        },
+        "evidence": {
+          "$ref": "#/$defs/file_ref"
+        }
+      }
+    },
+    "attestation": {
+      "type": "object",
+      "required": [
+        "status",
+        "evidence"
+      ],
+      "properties": {
+        "status": {
+          "const": "verified"
+        },
+        "evidence": {
+          "$ref": "#/$defs/file_ref"
+        }
+      }
+    },
+    "baseline_changes": {
+      "type": "array"
+    },
+    "reviewer_decisions": {
+      "type": "array"
+    },
+    "installation_instructions": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rollback_instructions": {
+      "type": "string",
+      "minLength": 1
+    },
+    "shipped_requirements": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^TS-0(0[1-9]|1[0-6])$"
+      }
+    },
+    "critical_contract_boundaries": {
+      "type": "array"
+    }
+  },
+  "$defs": {
+    "file_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

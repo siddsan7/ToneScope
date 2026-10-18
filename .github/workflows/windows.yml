@@ -1,0 +1,21 @@
+name: Windows development checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: cmake --preset windows-dev
+      - run: cmake --build --preset windows-dev -- /m:1 /nr:false
+      - run: ctest --preset windows-dev --output-on-failure
+      - run: python -m unittest discover -s tests/integration -v
+      - shell: pwsh
+        run: |
+          ./scripts/tonescope.ps1 eval --suite contracts --output artifacts/contracts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/tonescope.ps1 eval --suite integration --output artifacts/integration
+          exit $LASTEXITCODE
+      # This is a development gate. Production DSP/device/human/model gates are
+      # separately required by release-check and cannot be inferred from CI.
