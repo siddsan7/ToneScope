@@ -91,6 +91,8 @@ void microscopeTests() {
  p={};p.crossoverHighHz=300;require(!validate(p,48000,error),"crossover minimum octave spacing");
 }
 int main(){try {
+ {auto tiny=sine(4);require(!compare(tiny,tiny,1,std::numeric_limits<std::int64_t>::min(),false).valid,"reverse extreme interval rejected before subtraction");require(!compareAligned(tiny,tiny,1,std::numeric_limits<std::int64_t>::min(),false,0).valid,"aligned reverse extreme interval rejected before subtraction");}
+
  AudioData lowRate;lowRate.sampleRate=8000;lowRate.samples={{.125f,.25f,-.5f}};Parameters lowParams;lowParams.toneHz=3200;require(render(lowRate,lowParams).samples==lowRate.samples,"explicit valid low-rate configuration prepares without default-frequency rejection");
 
  microscopeTests();
