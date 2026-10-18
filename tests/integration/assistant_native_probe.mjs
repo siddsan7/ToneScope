@@ -19,10 +19,11 @@ class AttackProvider {
     if(scenario==='forged-measurement')result.proposal.evidence_refs[0].value+=9;
     if(scenario==='automatic-apply')result.proposal.requires_user_acceptance=false;
     if(scenario==='stale-revision')result.proposal.session_revision-=1;
+    if(scenario==='fabricated-prose')result.proposal.hypotheses=['RMS is -3 dBFS and peak is +9 dBFS'];
     return result;
   }
 }
-const provider=['forged-measurement','automatic-apply','stale-revision'].includes(scenario)?new AttackProvider():new RulesProvider();
+const provider=['forged-measurement','automatic-apply','stale-revision','fabricated-prose'].includes(scenario)?new AttackProvider():new RulesProvider();
 const service=new AssistantService(native,new StateStore(join(folder,'state')),provider);
 const output=await service.run({schema_version:1,request_id:'independent_probe',session_id:fixture.snapshot.session_id,prompt:'Please increase the level'});
 await writeFile(join(folder,'service-output.json'),JSON.stringify(output,null,2));
