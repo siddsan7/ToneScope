@@ -23,6 +23,7 @@ public:
     Engine(const Engine&) = delete;
     Engine& operator=(const Engine&) = delete;
     void prepare(double sampleRate, int channels);
+    void prepare(double sampleRate, int channels, const Parameters& initial);
     void reset();
     void setParameters(const Parameters&); // validated; audio-thread single writer
     bool setParametersRealtime(const Parameters&) noexcept; // no allocation/exception, retains last valid state on rejection
