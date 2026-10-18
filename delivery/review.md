@@ -15,3 +15,5 @@ Findings addressed in integration:
 - Out-of-domain float dry reference differed from Engine clamp: apply identical +/-16 ingress policy before reference trim and report clamp count.
 
 Remaining development limitations are recorded in `progress.json` and `docs/design.md`; no review grants production release approval.
+
+Further independent agent reviews cover exact-head PR1–3 and PR4 integration. Concrete fixes include low-rate preparation, signed interval overflow, phase-compensated crossover, concurrent publication, pinned SDK selection, deep Unicode paths, rollback identity/reparse ancestry, versioned assistant A/B routing, dedicated report validation, stale development evidence, admission/retention and bounded native baseline state. Actual source mutants exercise smoothing/version/authorization guards. Scope findings and rerun logs are retained under `artifacts/integration-review/`; PR comments record exact reviewed heads. Final merging requires passing exact-head Windows/Linux checks. These remain development reviews, not physical/human/live-model qualifications.

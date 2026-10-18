@@ -1,62 +1,31 @@
-# ToneScope interface design
+# ToneScope interface and ownership
 
-The current interface embeds dark React/shadcn/Radix instrument controls and Motion inside JUCE's native Windows shell. Space Grotesk and Commit Mono are locally bundled from Free Faces selections. Muted sage identifies dry audio and amber identifies processed audio; labels and dashed lines preserve non-color cues. Waveform selection follows the pointer continuously; reduced motion, forced colors and 100–200% text sizing are supported. See `frontend/README.md` for assets, licenses and the native command boundary.
+The primary interface is a dark React/shadcn instrument view embedded in native JUCE/WebView2. The original native controls remain the fallback if the browser runtime is unavailable. The C++ engine owns audio and analytical values; React receives versioned bounded snapshots and returns allowlisted typed commands. File and device actions use native choosers. Packaged resources/fonts are local, navigation is restricted, and the browser never receives broker credentials or arbitrary filesystem access.
 
-Native audio, choosers, devices, sessions and exports remain owned by C++. The browser receives bounded measurements and typed commands; it does not process audio or receive assistant credentials. The optional assistant presents predictions separately from measured previews and requires explicit acceptance. Native controls remain the runtime fallback.
+## Instrument layout
 
-The following section documents the original native fallback design. Its historical capture/duration and implementation limits are superseded by `delivery/brain.md` and `delivery/progress.json`.
+The measured waveform and logarithmic frequency spectrum sit beside the signal chain and assistant tabs. Sage/amber labels and distinct trace styles identify dry/processed signals beyond color. Space Grotesk and Commit Mono were curated from Free Faces and bundled under OFL; component sources/licenses and upstream links are in `frontend/README.md`. Numeric entries accompany sliders, keyboard commands retain native transport behavior, and selection is expressed in absolute source time even when a long file uses a bounded inspection window.
 
-## Native fallback reference
+Motion supports reduced motion; text can scale to200%, with forced-colors and contrast handling. Actual embedded software probes verify fonts, measured traces, parameter validation, undo, passage marks, assistant interactions and layout/media behavior. These are not human Narrator, mixed-DPI or usability findings. `artifacts/frontend-native/embedded.png` is an actual native embedded screenshot from the functional synthetic fixture, not a design mockup.
 
-The design thesis is **a closer listen**: the waveform and spectrum share one large, quiet study surface, while effects remain in a consistent signal-chain inspector. The blue dry trace and amber processed trace are the only strong colors; solid versus interrupted strokes and explicit names also identify them. This is a native JUCE Windows application, not a browser or rendered mockup. Native Windows titlebar, file choosers, device selector, keyboard navigation and JUCE control accessibility provide the platform foundation.
+## Measured comparison
 
-## References read and translated
+Every render reconstructs history from source frame zero. Stale revision results cannot publish current measurements or playback. Dry and wet use identical selected-band filters; compensated integer latency does not remove frequency-dependent phase. Frozen RMS matching is capped at12dB and does not alter exported samples. Raw/matched residuals are mathematical differences, not isolated distortion. Analytical samples and guarded monitor playback remain separate.
 
-The implementation uses the requested `apple-look` and `apple-motion` skills. Apple platform principles guide the hierarchy and behavior; macOS-specific menu locations, SF fonts and materials are not copied into Windows. The following local skill references were read (headings and short excerpts identify the applied principle):
+Manual soft/hard marks report RMS, sample peak, crest and contrast, plus available10–90% rise/90–10% decay crossings using full-history10ms energy. Missing crossings/silence remain explicit. Actual overall/per-band compressor reduction is recorded by the engine; snapshots retain at most512 actual paired observations and source positions. No fabricated transient detector or perceptual score is presented.
 
-| Reference and heading | Principle | Native implementation |
-|---|---|---|
-| `accessibility.md` › Vision | “Convey information with more than color alone.” | Names, line styles, numeric values and keyboard selection accompany traces. |
-| `layout.md` › Visual hierarchy | “Group related items to clearly express related information or functions.” | Study surface, comparison controls and persistent chain inspector have distinct spatial roles. |
-| `typography.md` › Ensuring legibility | “In general, avoid light font weights.” | System font, regular/bold weights, 13 pt control labels and a compact 28 pt product title. |
-| `color.md` › Best practices | Semantic roles and sufficient contrast | One appearance-aware palette for background, surface, ink, secondary ink, grid and two signals. |
-| `designing-for-macos.md` › Best practices | Resizable windows and productive display use | Native titlebar; responsive study surface and fixed readable inspector; minimum 960×720 logical pixels. Windows conventions take priority. |
-| `keyboards.md` › Best practices | “Respect standard keyboard shortcuts.” | Ctrl+O import, Ctrl+S session, Space play/pause and Escape stop; tab-accessible controls with numeric entry. |
-| `focus-and-selection.md` › Best practices | “Avoid changing focus without people’s interaction.” | Standard JUCE focus behavior; background completion updates content without requesting focus. |
-| `charting-data.md` › Best practices | “Keep a chart simple, letting people choose when they want additional details.” | One linked waveform and one logarithmic frequency trace with explicit units; no decorative plots. |
-| `motion.md` › Best practices | “Let people cancel motion.” | No input-blocking transitions. Selection follows pointer immediately; playback cursor updates independently of worker analysis. |
-| `dark-mode.md` › Best practices | “Avoid offering an app-specific appearance setting.” | JUCE Desktop appearance listener applies light/dark semantic roles when Windows appearance changes. |
-| `cross-platform.md` › Desktop conventions | Prefer native chrome and input conventions | JUCE native Windows shell and controls rather than imitating macOS window furniture. |
-| `apple-motion/SKILL.md` › Response / Direct manipulation / Reduced motion | Immediate, continuous response and static alternatives | No springs, parallax, animated backgrounds, transitions or looping decoration. Thus both OS motion settings receive the same static controls. The moving playback cursor conveys time only. |
+## Bounded ownership
 
-References reside under `C:/Users/sidds/.codex/skills/apple-look/references/` and `C:/Users/sidds/.codex/skills/apple-motion/SKILL.md`. They are design evidence, not a claim of Windows accessibility conformance. No transparency effects are required for the instrument surface.
+The message thread owns controls/source/render lifetimes. Publishing immutable cached playback detaches the callback; callbacks never destroy shared pointers or perform file, JSON, FFT, model or logging work. Fixed command/capture/playback rings separate audio from workers. Continuous controls use the native noexcept realtime setter; topology/latency changes reconfigure while stopped. Long files expose full metadata and an inspection window no longer than ten seconds/1,048,576frames; processing and exact selection metrics include earlier history. Worker replay uses a bounded ring and explicit starvation/fault stop. Eager analysis retains a256MiB limit; streaming WAV supports2GiB/two hours.
 
-## Implemented interactions
+Persistent dry capture is independent of monitor gain, with overflow/incomplete status and explicit recovery. Sessions validate strict schema1, source digests and typed UI fields; snapshots publish atomically and parameter patches undo as one transaction. Raw export excludes selected-band, match, fades and monitor guarding. Audio/sidecar publication reserves both destinations; two-step failure can leave complete audio without a sidecar and reports that failure.
 
-- Import bounded mono/stereo WAV to an immutable source. A background worker renders from sample zero, preserving effect history when selecting a later passage. Stale revisions cannot publish measurements or playback buffers. Queued stale replaceable jobs are removed, bounding rendering to one active plus one pending job; export work remains separate from this cancellation policy.
-- Play/pause, rewind, seek and loop the selected interval. Playback uses linear rate conversion when source and device rates differ; it is a development resampler, not qualified production SRC. A 128-source-frame boundary envelope and ±0.95 monitor output guard affect audition only.
-- Per-stage enable/bypass and six stage orders; input trim and all API compressor/EQ/drive controls. Stages begin bypassed. Live chain topology changes stop monitoring before reconfiguration.
-- Dry, processed, raw residual and RMS-matched residual audition. Frozen RMS correction comes from the selected interval and is capped by the shared comparison engine. Residual is labelled as a mathematical difference, never isolated distortion. Live offers dry/processed; residual uses replay.
-- Pointer time selection plus numeric seconds start/end. Both waveform channels remain in playback; plots aggregate channels for display. Spectrum takes up to 2048 selected samples, zero-pads short intervals, and labels padding explicitly. The shared analysis engine defines the Hann/window normalization and channel aggregation.
-- Audio device and buffer selection. Monitoring requires an explicit user action after selection; it starts off. Negotiated rate and buffer, live gain reduction, invalid sample count and output guard interventions are visible. Device failure disables monitoring; it requires explicit re-enabling.
-- Bounded local dry capture, up to 120 seconds. Stop creates a replayable source to render through current settings. No upload or external account exists.
-- Atomic file-backed session save, strict version/parameter validation on open, missing-source error and full-source processed WAV plus JSON comparison evidence export. The session contract is shared with CLI: `schema_version`, `source`, `parameters` keyed by Engine.h names and optional `ui` selection/audition fields. UI selection bounds are normalized to 0…1; audition is `dry`, `wet` or `residual`; `rms_match` distinguishes matched residual.
+## Optional assistant and diagnostics
 
-## Ownership and real-time behavior
+The optional private Node broker has authenticated loopback access, bounded tools/admission/history/assets, independently verified native previews, revision binding and explicit Apply. Offline rules support measured level requests and abstain on unsupported tonal requests. Candidate/current-settings A/B uses frozen RMS matching without modifying the graph; Apply changes one patch and one Undo restores it. Missing runtime is an explicit unavailable state. Real model access remains dormant behind consent/model/pricing/currency gates.
 
-The message thread owns UI/source/render lifetimes. Replacing cached playback detaches the audio callback, publishes immutable buffers, then reattaches; the callback never creates or destroys shared pointers. Live input uses fixed 512-frame stereo scratch blocks and a preallocated bounded capture buffer. Parameters cross a fixed SPSC queue; callback consumes at most 32 entries and applies the latest validated snapshot once. Processing, capture, cursor and telemetry use lock-free atomics; file I/O, rendering, FFT, JSON and UI stay outside the callback. The callback uses the core nonthrowing realtime setter and mutes on a rejected snapshot. The device-start path prepares the engine without reading controls. Hardware profiling is still required to qualify the whole device callback.
+Callback observations are opt-in and disabled by default. Timing bins, scoped misses, calibration and runtime event counters can be exported locally through a dedicated atomic JSON writer; review device identity before sharing. These observations do not certify hardware deadlines or round-trip latency. Recovery and escalation steps are in `runbooks.md`.
 
-## Concrete development limits
+## Qualification limits
 
-This is a D1 development shell with parts of D2. File import is limited to 100 MiB and 120 seconds to bound full-source render memory. Live rates are restricted to 44.1–96 kHz. File plots are cached; live plots require capture and replay. Frequency-band audition, multiband compression, attack/decay segmentation, envelope/gain-reduction histories, undo, recording overflow persistence, device-removal recovery qualification, qualified high-quality resampling and installer/signature workflows are not implemented here. Captured takes can replay/export wet audio but cannot yet save a persistent dry-source session. Source digest checks are implemented on import/session reopen; missing-source recovery and full schema migration remain integration work. A full native command menu is also absent.
-
-Contrast and accessibility must be measured in the running Windows app, including high contrast, Narrator, keyboard traversal, system text scaling and mixed-DPI displays. There has been no human accessibility pilot or listening test. The layout, OS appearance propagation and interactive motion require runtime inspection; source inspection cannot establish effectiveness. The interface deliberately uses no optional spatial animation, so reduced-motion behavior is immediate static state changes by construction.
-
-## Snapshot review and measured colors
-
-The native offline component snapshot `artifacts/ui/desktop-final.png` was inspected. Numeric controls now use the content ink, and labels use ASCII to avoid Windows narrow-string encoding errors. This verifies rendered layout only, not keyboard/Narrator/hardware behavior.
-
-light: ink #172c40 on #f9fbfd = 13.77:1, secondary #435e75 on #f9fbfd = 6.54:1, dry #156296 on #f9fbfd = 6.29:1, wet #944c05 on #f9fbfd = 6.14:1.
-
-dark: ink #edf3f8 on #1d2a38 = 13.03:1, secondary #b4c5d6 on #1d2a38 = 8.26:1, dry #83c4ee on #1d2a38 = 7.70:1, wet #ffc080 on #1d2a38 = 9.10:1.
-
+Physical device lifecycle/round-trip/soak, human listening/accessibility, independently licensed musical data/holdout, signing/licensing choices and clean-machine installation remain required. Linear monitor resampling and discrete transitions need listening/device qualification. No UI screenshot or synthetic numerical suite completes those gates. See `../qualification/`, `../delivery/progress.json` and the exact PR checks for the current delivery status.

@@ -164,12 +164,24 @@ inline Ready validateReady(const Context& context,const juce::var& envelope,cons
  return {envelope,p,preview,audio,parameters,data};
 }
 
+// Control/worker threads only, under cancelMutex. Overflow fails closed until
+// explicit history deletion creates a new session; active cancellations cannot
+// be evicted by an unrelated ID flood.
+class CancellationLedger {
+ std::set<juce::String> ids;size_t limit;bool overflow=false;
+public:
+ explicit CancellationLedger(size_t capacity=4096):limit(capacity){}
+ void insert(const juce::String& id){if(ids.contains(id))return;if(ids.size()>=limit){overflow=true;return;}ids.insert(id);}
+ bool contains(const juce::String& id)const{return overflow||ids.contains(id);}
+ size_t size()const{return ids.size();}
+ void clear(){ids.clear();overflow=false;}
+};
 class Bridge final : public std::enable_shared_from_this<Bridge> {
  struct Job final:juce::ThreadPoolJob {std::function<void()> fn;explicit Job(std::function<void()> f):juce::ThreadPoolJob("Assistant local broker"),fn(std::move(f)){}JobStatus runJob()override{fn();return jobHasFinished;}};
  juce::ThreadPool work{1},control{1};
  juce::ChildProcess child;
- std::mutex childMutex,cancelMutex,serverMutex;
- std::set<juce::String> canceledRequests;
+ std::mutex childMutex,cancelMutex,serverMutex;mutable std::mutex sessionMutex;
+ CancellationLedger canceledRequests;
  bool canceled(const juce::String& id){std::scoped_lock lock(cancelMutex);return canceledRequests.contains(id);}
  std::atomic<bool> stopping{false};
  std::atomic<int> port{0};
@@ -213,7 +225,7 @@ public:
  using Completion=std::function<void(juce::var,juce::String)>;
  const juce::File& directory()const{return privateDirectory;}
  juce::File previewDirectory()const{return privateDirectory.getChildFile("previews");}
- juce::String sessionId()const{return session;}
+ juce::String sessionId()const{std::scoped_lock lock(sessionMutex);return session;}
  void post(std::function<void()> fn){work.addJob(new Job(std::move(fn)),true);}
  juce::String prepare(){
   node=findNode();service=findService();cli=findCli();
@@ -243,7 +255,7 @@ public:
   auto self=shared_from_this();post([self,context=std::move(context),prompt=std::move(prompt),complete=std::move(complete)]()mutable{
    try{
     std::unique_lock serverLock(self->serverMutex);
-    require(!self->stopping&&!self->canceled(context.requestId)&&prompt.getNumBytesAsUTF8()<=7000,"Assistant request is canceled or excessive.");
+    require(!self->stopping&&!self->canceled(context.requestId)&&context.sessionId==self->sessionId()&&prompt.getNumBytesAsUTF8()<=7000,"Assistant request is canceled, excessive or belongs to an expired session.");
     require(context.first>=0&&context.last>context.first&&context.last+context.alignment<=int64_t(context.sampleRate*30)&&context.alignment==((context.parameters.drive&&context.parameters.oversampling>1)?32:0),"Assistant selection exceeds its processing budget or alignment differs.");
     require(fileHash(context.sourceFile)==context.sourceHash,"Source changed before the assistant request.");
     auto asset=object({{"snapshot",context.snapshot()},{"source_path",context.sourceFile.getFullPathName()},{"parameters",tonescope::session::parametersToVar(context.parameters)}});
@@ -266,8 +278,8 @@ public:
    }catch(const std::exception& error){{if(!self->canceled(context.requestId)||self->port.load()==0){std::scoped_lock lock(self->childMutex);self->child.kill();self->port=0;}}complete({},juce::String(error.what()));}
   });
  }
- void cancel(const juce::String& requestId){{std::scoped_lock lock(cancelMutex);canceledRequests.insert(requestId);}auto self=shared_from_this();control.addJob(new Job([self,requestId]{try{if(self->port.load()>0)self->http("POST","/v1/requests/"+requestId+"/cancel?session_id="+self->session,object({}),3000);}catch(...){}}),true);}
- void deleteHistory(Completion complete){auto self=shared_from_this();control.addJob(new Job([self,complete]{try{if(self->port.load()>0)self->http("DELETE","/v1/session?session_id="+self->session,{});std::unique_lock serverLock(self->serverMutex);{std::scoped_lock lock(self->childMutex);self->child.kill();self->port=0;}require(self->previewDirectory().isAChildOf(self->privateDirectory)&&self->previewDirectory().deleteRecursively(),"Cannot delete private assistant previews.");for(const auto& file:self->historyDirectory.findChildFiles(juce::File::findFiles,false,"*.json*")){auto name=file.getFileName();if(name.length()>=69&&digestText(name.substring(0,64))&&name.substring(64).startsWith(".json"))require(file.deleteFile(),"Cannot delete assistant history.");}for(const auto& file:self->privateDirectory.findChildFiles(juce::File::findFiles,false,"baseline-*.wav*"))require(file.deleteFile(),"Cannot delete assistant baseline cache.");self->session=capability().substring(0,32);complete({},{});}catch(const std::exception& error){complete({},juce::String(error.what()));}}),true);}
+ void cancel(const juce::String& requestId){{std::scoped_lock lock(cancelMutex);canceledRequests.insert(requestId);}auto self=shared_from_this();control.addJob(new Job([self,requestId]{try{if(self->port.load()>0)self->http("POST","/v1/requests/"+requestId+"/cancel?session_id="+self->sessionId(),object({}),3000);}catch(...){}}),true);}
+ void deleteHistory(Completion complete){auto self=shared_from_this();control.addJob(new Job([self,complete]{try{if(self->port.load()>0)self->http("DELETE","/v1/session?session_id="+self->sessionId(),{});std::unique_lock serverLock(self->serverMutex);{std::scoped_lock lock(self->childMutex);self->child.kill();self->port=0;}require(self->previewDirectory().isAChildOf(self->privateDirectory)&&self->previewDirectory().deleteRecursively(),"Cannot delete private assistant previews.");for(const auto& file:self->historyDirectory.findChildFiles(juce::File::findFiles,false,"*.json*")){auto name=file.getFileName();if(name.length()>=69&&digestText(name.substring(0,64))&&name.substring(64).startsWith(".json"))require(file.deleteFile(),"Cannot delete assistant history.");}for(const auto& file:self->privateDirectory.findChildFiles(juce::File::findFiles,false,"baseline-*.wav*"))require(file.deleteFile(),"Cannot delete assistant baseline cache.");{std::scoped_lock lock(self->sessionMutex);self->session=capability().substring(0,32);}{std::scoped_lock lock(self->cancelMutex);self->canceledRequests.clear();}complete({},{});}catch(const std::exception& error){complete({},juce::String(error.what()));}}),true);}
  void shutdown(){stopping=true;{std::scoped_lock lock(childMutex);child.kill();port=0;}control.removeAllJobs(true,-1);work.removeAllJobs(true,-1);}
  ~Bridge(){shutdown();if(privateDirectory!=juce::File{}&&uuid(privateDirectory.getFileName()))privateDirectory.deleteRecursively();}
 };
