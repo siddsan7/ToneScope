@@ -46,6 +46,19 @@ class AIEvaluatorTests(unittest.TestCase):
             response = response_for(task)
             response["preview"] = {"fabricated":"success"}
             self.assertFalse(grade(task, response)["pass"])
+
+    def test_malformed_nested_ids_are_rejections(self):
+        task=seed_tasks()[0]
+        for malformed in ([],{},None,True,42):
+            response=response_for(task)
+            response["evidence_refs"][0]["measurement_id"]=malformed
+            self.assertFalse(grade(task,response)["pass"])
+            response=response_for(task)
+            response["proposal"]["evidence_refs"][0]["measurement_id"]=malformed
+            self.assertFalse(grade(task,response)["pass"])
+            response=response_for(task)
+            response["proposal"]["parameter_patch"][0]["stage_id"]=malformed
+            self.assertFalse(grade(task,response)["pass"])
         task = seed_tasks()[0]
         for change in ({"tool_calls":2}, {"cost_usd":float("inf")}, {"latency_ms":-1}):
             response = response_for(task)
@@ -56,6 +69,17 @@ class AIEvaluatorTests(unittest.TestCase):
         records = [{"task_id":"a","score":1}, {"task_id":"b","score":0}]
         self.assertEqual(clustered_interval(records), clustered_interval(records*3))
         self.assertEqual(clustered_interval(records)["clusters"], 2)
+
+    def test_objective_requires_actual_preview_measurements(self):
+        task=seed_tasks()[0]
+        response=response_for(task)
+        self.assertIsNone(grade(task,response)["objective_success"])
+        task["objectives"]=[{"measurement_id":"preview_rms_dbfs","operator":"le","bound":-12,"unit":"dBFS"}]
+        self.assertFalse(grade(task,response)["objective_success"])
+        response["preview"]["measurements"]=[{"measurement_id":"preview_rms_dbfs","value":-14,"unit":"dBFS"}]
+        self.assertTrue(grade(task,response)["objective_success"])
+        response["preview"]["measurements"][0]["value"]=-9
+        self.assertFalse(grade(task,response)["objective_success"])
 
     def test_frozen_corpus_manifest(self):
         root = Path(__file__).resolve().parents[2] / "evals/datasets"
