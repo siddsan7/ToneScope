@@ -49,3 +49,21 @@ assert.equal((await service.run({schema_version:1,request_id:'native_2',session_
 await adapter.deleteSession('native_session');
 }finally{await rm(dir,{recursive:true,force:true});
 }});
+test('actual cropped native preview preserves selection binding and charges prehistory processing',{skip:!executable},async()=>{
+ const dir=await mkdtemp(join(process.cwd(),'.test-runtime-crop-'));
+ try{
+  const total=48000,start=12000,end=36000;
+  const wav=Buffer.alloc(44+total*4);wav.write('RIFF');wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);wav.writeUInt32LE(16,16);wav.writeUInt16LE(3,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(48000,24);wav.writeUInt32LE(192000,28);wav.writeUInt16LE(4,32);wav.writeUInt16LE(32,34);wav.write('data',36);wav.writeUInt32LE(total*4,40);
+  for(let i=0;i<total;i++)wav.writeFloatLE(0.04*Math.sin(2*Math.PI*440*i/48000),44+i*4);
+  const source=join(dir,'source.wav'),baseline=join(dir,'baseline.wav');await writeFile(source,wav);
+  const baselineManifest=JSON.parse(execFileSync(executable!,['render','--source',source,'--out',baseline,'--start',String(start),'--end',String(end)],{encoding:'utf8',windowsHide:true}));
+  assert.deepEqual(baselineManifest.selection_samples,[start,end]);assert.equal(baselineManifest.frames,end-start);
+  const snapshot:Snapshot={session_id:'cropped_session',session_revision:2,source_sha256:createHash('sha256').update(wav).digest('hex'),base_graph_sha256:baselineManifest.graph_sha256,source_handle:'cropped_asset',selection_samples:[start,end],sample_rate:48000,parameters:[{stage_id:'output',parameter_id:'outputDb',unit:'dB',value:0,min:-24,max:24}]};
+  const assets=new Map([['cropped_session',{snapshot,source_path:source,baseline_path:baseline,parameters:{outputDb:0}}]]);
+  const adapter=new NativeCliAdapter(executable!,assets,join(dir,'previews'));
+  const output=await new AssistantService(adapter,new StateStore(join(dir,'state'))).run({schema_version:1,request_id:'cropped_1',session_id:'cropped_session',prompt:'make louder'});
+  assert.equal(output.status,'ready',JSON.stringify(output));assert.ok(output.preview);assert.deepEqual(output.proposal?.selection_samples,[start,end]);assert.equal(output.usage.candidate_frames,end);assert.ok(output.preview.measurements[0].value>output.proposal!.evidence_refs[0].value+5.9);
+  const candidateManifest=JSON.parse(await readFile(adapter.previewPath('cropped_session',output.preview.preview_id)+'.json','utf8'));
+  assert.equal(candidateManifest.frames,end-start);assert.equal(candidateManifest.processed_frames,end);assert.deepEqual(candidateManifest.selection_samples,[start,end]);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
