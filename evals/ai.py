@@ -2,6 +2,7 @@
 import json
 import math
 import random
+import re
 from dataset import canonical_hash, assigned_split
 
 PARAMS = {"lowDb": (-18, 18), "midDb": (-18, 18), "highDb": (-18, 18), "driveDb": (0, 36)}
@@ -69,6 +70,10 @@ def grade(task, response):
         return {"pass": False, "errors": ["response schema"], "critical": True}
     if response["schema_version"] != 1 or type(response["schema_version"]) is not int or response["request_id"] != task["request_id"]:
         errors.append("response identity")
+    if (response["status"] not in ("ready","noop","abstain","canceled","timed_out","failed")
+        or not isinstance(response["trace_id"],str) or not response["trace_id"]
+        or (response["reason"] is not None and not isinstance(response["reason"],str))):
+        errors.append("response status/trace/reason schema")
     expected = {"proposal": "ready", "clarify": "abstain", "error": "failed"}.get(task["expected_status"], task["expected_status"])
     if response["status"] != expected:
         errors.append("wrong task outcome")
@@ -77,6 +82,19 @@ def grade(task, response):
         preview = response["preview"]
         if not isinstance(preview, dict) or set(preview) != {"preview_id", "audio_sha256", "session_revision", "measurements"} or preview.get("session_revision") != task["session_revision"]:
             errors.append("missing or stale preview")
+        elif (not isinstance(preview["preview_id"],str) or not preview["preview_id"] or not isinstance(preview["audio_sha256"],str)
+              or not re.fullmatch("[0-9a-f]{64}",preview["audio_sha256"])
+              or not isinstance(preview["measurements"],list) or len(preview["measurements"])>32):
+            errors.append("preview artifact/measurement schema")
+        else:
+            seen_measurements=set()
+            for measurement in preview["measurements"]:
+                if (not isinstance(measurement,dict) or set(measurement)!={"measurement_id","value","unit"}
+                    or not isinstance(measurement["measurement_id"],str) or measurement["measurement_id"] in seen_measurements
+                    or not isinstance(measurement["unit"],str) or type(measurement["value"]) not in (int,float) or not math.isfinite(measurement["value"])):
+                    errors.append("preview artifact/measurement schema")
+                else:
+                    seen_measurements.add(measurement["measurement_id"])
         if task.get("target_parameters") is not None and isinstance(response["proposal"], dict):
             expected_patch = [{"stage_id": "equalizer", "parameter_id": k, "unit": "dB", "value": v} for k,v in task["target_parameters"].items()]
             if response["proposal"].get("parameter_patch") != expected_patch:
@@ -133,7 +151,7 @@ def response_for(task, mode="rules"):
                         expected_tradeoffs=["Less high-band energy"], limitations=["Protocol fixture; no real preview audio"], requires_user_acceptance=True)
         value["proposal"] = proposal
         value["evidence_refs"] = refs
-        value["preview"] = {"preview_id":"fixture-only","audio_sha256":"0"*64,"session_revision":task["session_revision"],"measurements":{}}
+        value["preview"] = {"preview_id":"fixture-only","audio_sha256":"0"*64,"session_revision":task["session_revision"],"measurements":[]}
         value["usage"]["tool_calls"] = 1
     return value
 

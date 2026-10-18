@@ -91,6 +91,9 @@ class AIEvaluatorTests(unittest.TestCase):
         # This is a seed regression corpus. No final unseen-holdout claim.
         manifest = json.loads((root / "seed-inventory.json").read_text())
         self.assertFalse(manifest["holdout_qualified"])
+        by_id={item["id"]:item for item in manifest["items"]}
+        for task in seed_tasks():
+            self.assertEqual(by_id[task["task_id"]]["sha256"],canonical_hash(task),"task changed without reviewed corpus update")
 
     def test_grouped_leakage_and_normalized_duplicates(self):
         self.assertEqual(signal_signature([.1,.2,-.3]), signal_signature([-.2,-.4,.6]))
