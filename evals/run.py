@@ -9,13 +9,16 @@ import platform
 import subprocess
 import sys
 import uuid
+import traceback
 from pathlib import Path
 from provenance import runtime_files, source_identity
+from numeric import eq_response, tone_transfer, compressor_reference, crossover_response, drive_periodic_reference
 
 from oracles import (VERSION, compressor_gain_db, fixture, flatten, read_wav,
                      residual, rms, sha256, write_float_wav)
 
 ROOT = Path(__file__).resolve().parents[1]
+GATES = json.loads((ROOT / "evals/gates.json").read_text())
 
 
 def write_json(path, value):
@@ -95,6 +98,7 @@ class Runner:
                 result["reason"] = str(exc)
             except Exception as exc:
                 result["status"], result["reason"] = "fail", f"{type(exc).__name__}: {exc}"
+                write_json(folder / "failure.json", {"exception_type":type(exc).__name__, "message":str(exc), "traceback":traceback.format_exc()})
         artifacts = sorted(p for p in folder.rglob("*") if p.is_file() and p.name != "result.json")
         result["evidence_paths"] = [{"path": str(p.relative_to(self.out)), "sha256": sha256(p)} for p in artifacts]
         source = folder / "input.wav"
@@ -130,8 +134,8 @@ class Runner:
         if len(actual) != len(expected) or len(actual[0]) != len(expected[0]):
             raise AssertionError("identity changed channels or frames")
         metrics = residual(flatten(actual), flatten(expected))
-        close(metrics["max_abs"], 0, 1e-6, "identity max absolute error")
-        close(metrics["rms"], 0, 1e-5, "identity null RMS (-100 dBFS)")
+        close(metrics["max_abs"], 0, GATES["identity_max_abs"], "identity max absolute error")
+        close(metrics["rms"], 0, GATES["identity_residual_rms"], "identity null RMS (-100 dBFS)")
         return metrics
 
     def block(self, folder):
@@ -142,7 +146,7 @@ class Runner:
         for block in (31, 128, 257, 1024):
             actual = self.render(folder, samples, params, block=block, output=f"block-{block}.wav")
             metrics[str(block)] = residual(flatten(reference), flatten(actual))
-            close(metrics[str(block)]["max_abs"], 0, 1e-5, "block invariance")
+            close(metrics[str(block)]["max_abs"], 0, GATES["block_max_abs"], "block invariance")
         return metrics
 
     def deterministic(self, folder):
@@ -178,6 +182,131 @@ class Runner:
             metrics[str(level)] = {"measured_gain_db": measured, "expected_gain_db": expected}
         return metrics
 
+    def eq(self, folder):
+        metrics = {}
+        for rate in (44100, 48000, 96000):
+            for bin_index in (3, 17, 93, 557, 1100):
+                count = 4096
+                frequency = bin_index * rate / count
+                warmup = rate // 2
+                samples = [[.1 * math.sin(2*math.pi*frequency*n/rate) for n in range(warmup+count)]]
+                params = {"equalizer": True, "lowDb": 6, "midDb": -9, "highDb": 3,
+                          "midHz": 1300, "midQ": 1.3}
+                target = f"eq-{rate}-{bin_index}.wav"
+                actual = self.render(folder, samples, params, output=target, rate=rate)
+                source = read_wav(folder / (Path(target).stem + "-input.wav"))[1]
+                measured = tone_transfer(source[0][-count:], actual[0][-count:], frequency, rate)
+                expected = eq_response(frequency, rate, 6, -9, 3, 1300, 1.3)
+                error_db = 20*math.log10(abs(measured / expected))
+                close(error_db, 0, GATES["eq_db"], "independent EQ transfer dB")
+                close(abs(measured - expected), 0, GATES["eq_complex_relative"]*abs(expected), "complex EQ transfer")
+                metrics[f"{rate}/{bin_index}"] = {"frequency_hz": frequency, "error_db": error_db,
+                    "complex_abs_error": abs(measured-expected), "phase_error_radians": __import__("cmath").phase(measured/expected)}
+        write_json(folder / "metrics.json", metrics)
+        return metrics
+
+    def compressor_timing(self, folder):
+        metrics = {}
+        for rate in (44100,48000,96000):
+            # Long settled low/high/low plateaus isolate both detector and reduction timing.
+            width = rate // 2
+            samples = [[.02]*width + [.5]*width + [.02]*width]
+            params = {"compressor":True, "thresholdDb":-18, "ratio":4, "kneeDb":6,
+                      "attackMs":10, "releaseMs":150}
+            target = f"timing-{rate}.wav"
+            actual = self.render(folder, samples, params, output=target, rate=rate)
+            source = read_wav(folder / (Path(target).stem + "-input.wav"))[1][0]
+            expected = compressor_reference(source, rate)
+            errors = [abs(20*math.log10(y/e)) for y,e in zip(actual[0], expected)]
+            close(max(errors),0,GATES["compressor_db"],"compressor time-domain dB curve")
+            transitions = {}
+            for name, start, end in (("attack",width,2*width),("release",2*width,3*width)):
+                gain = [20*math.log10(y/x) for y,x in zip(actual[0][start:end],source[start:end])]
+                oracle = [20*math.log10(y/x) for y,x in zip(expected[start:end],source[start:end])]
+                target_gain = oracle[0] + (oracle[-1]-oracle[0])*(1-math.exp(-1))
+                direction = 1 if oracle[-1]>oracle[0] else -1
+                measured_cross = next(i for i,v in enumerate(gain) if direction*(v-target_gain)>=0)
+                expected_cross = next(i for i,v in enumerate(oracle) if direction*(v-target_gain)>=0)
+                close(measured_cross,expected_cross,max(GATES["compressor_timing_samples"],GATES["compressor_timing_relative"]*expected_cross),"compressor timing samples")
+                transitions[name] = {"measured_samples":measured_cross,"reference_samples":expected_cross}
+            metrics[str(rate)] = {"max_curve_error_db":max(errors), "transitions":transitions}
+        write_json(folder / "metrics.json", metrics)
+        return metrics
+
+    def channels_and_domain(self, folder):
+        metrics = {}
+        for rate in (8000,44100,48000,96000,192000):
+            # All declared finite ingress amplitudes clamp at +/-16 independently by channel.
+            samples = [[0.,.125,-.5,1.,-1.,16.,-16.,100.,-100.], [1.,0.,0.,0.,0.,0.,0.,0.,0.]]
+            params = {"toneHz":min(5000,.4*rate)}
+            actual = self.render(folder,samples,params,rate=rate,output=f"domain-{rate}.wav",block=1)
+            expected = [[max(-16.,min(16.,x)) for x in c] for c in samples]
+            errors = residual(flatten(actual),flatten(expected))
+            close(errors["max_abs"],0,GATES["identity_max_abs"],"channel domain/clamp")
+            metrics[str(rate)] = errors
+        return metrics
+
+    def crossover(self, folder):
+        metrics = {}
+        for rate in (44100,48000,96000):
+            for bin_index in (3,17,93,557,1100):
+                count, warmup = 4096, rate//2
+                frequency = bin_index*rate/count
+                samples = [[.1*math.sin(2*math.pi*frequency*n/rate) for n in range(warmup+count)]]
+                actual = self.render(folder,samples,{"compressor":True,"multiband":True,"ratio":1},rate=rate,output=f"xover-{rate}-{bin_index}.wav")
+                source = read_wav(folder / f"xover-{rate}-{bin_index}-input.wav")[1]
+                measured = tone_transfer(source[0][-count:],actual[0][-count:],frequency,rate)
+                expected = crossover_response(frequency,rate)
+                close(20*math.log10(abs(measured)),0,GATES["crossover_db"],"crossover magnitude")
+                close(abs(measured-expected),0,GATES["crossover_complex_absolute"],"crossover complex phase reference")
+                metrics[f"{rate}/{bin_index}"] = {"magnitude_db":20*math.log10(abs(measured)),"complex_error":abs(measured-expected),
+                    "phase_radians":__import__("cmath").phase(measured),"raw_identity_complex_error":abs(measured-1)}
+        write_json(folder/"metrics.json",metrics)
+        return metrics
+
+    def alias(self, folder):
+        metrics, failures = {}, []
+        count = 8192
+        for rate in (44100,48000,96000):
+            for bin_index in (683,1093,1531):
+                frequency = bin_index*rate/count
+                warmup = count*3
+                samples = [[.5*math.sin(2*math.pi*frequency*n/rate) for n in range(warmup+count+64)]]
+                ref2048, harmonics = drive_periodic_reference(frequency,rate,count,factor=2048)
+                ref4096, _ = drive_periodic_reference(frequency,rate,count,factor=4096)
+                convergence = residual(ref2048,ref4096)["rms"]
+                close(convergence,0,GATES["alias_reference_convergence_rms"],"high-rate reference convergence")
+                errors = {}
+                for factor in (1,2,4):
+                    target = f"alias-{rate}-{bin_index}-{factor}.wav"
+                    actual = self.render(folder,samples,{"drive":True,"driveDb":30,"toneHz":5000,"oversampling":factor},rate=rate,output=target)
+                    manifest = json.loads((folder/(Path(target).stem+"-manifest.json")).read_text())
+                    delay = manifest["latency_samples"]
+                    expected_delay = 0 if factor==1 else 32
+                    close(delay,expected_delay,0,"declared oversampling pure delay")
+                    aligned = actual[0][warmup+delay:warmup+delay+count]
+                    # Fit one complex gain/delay using only the fundamental; this does
+                    # not erase higher-harmonic errors or count intentional harmonics as aliases.
+                    ratio = tone_transfer(ref4096,aligned,frequency,rate)
+                    phase = __import__("cmath").phase(ratio)
+                    # Pure-delay fitting is evaluated at each intended harmonic.
+                    calibrated, _ = drive_periodic_reference(frequency,rate,count,factor=4096,phase_offset=phase)
+                    calibrated = [x*abs(ratio) for x in calibrated]
+                    # Root-mean-square waveform error includes finite resampler/tone
+                    # discrepancies. No subtraction of measured distortion is allowed.
+                    errors[str(factor)] = {"rms_error":residual(aligned,calibrated)["rms"],
+                        "fundamental_gain":abs(ratio),"fundamental_phase_radians":phase,"latency_samples":delay}
+                improvement = 20*math.log10(errors["1"]["rms_error"]/errors["4"]["rms_error"])
+                metrics[f"{rate}/{bin_index}"] = {"sample_rate_hz":rate,"frequency_hz":frequency,"reference_convergence_rms":convergence,
+                    "intended_harmonics":harmonics,"modes":errors,"improvement_db":improvement}
+                if improvement < GATES["alias_improvement_db"]:
+                    failures.append({"frequency_hz":frequency,"improvement_db":improvement})
+        write_json(folder/"metrics.json",metrics)
+        write_json(folder/"failures.json",failures)
+        if failures:
+            raise AssertionError(f"frozen alias improvement gate failed: {failures}")
+        return metrics
+
     def inspect(self, folder, frames=8192):
         samples = fixture("noise", frames=frames)
         write_float_wav(folder / "input.wav", samples)
@@ -210,6 +339,26 @@ class Runner:
             close(result["residualRms"], 0, 1e-5, "matched residual")
         return result
 
+    def delay_alignment(self, folder):
+        samples = fixture("noise",frames=8192)
+        write_float_wav(folder/"input.wav",samples)
+        metrics = {}
+        for delay in (0,1,32):
+            wet = [[0.]*delay + channel[:-delay] if delay else list(channel) for channel in samples]
+            path = folder/f"wet-{delay}.wav"
+            write_float_wav(path,wet)
+            result = self.command("compare","--dry",folder/"input.wav","--wet",path,"--start",100,"--end",8000,"--latency-samples",delay)
+            write_json(folder/f"aligned-{delay}.json",result)
+            if not result["valid"]:
+                raise AssertionError("eligible declared-delay comparison rejected")
+            close(result["residualRms"],0,GATES["identity_residual_rms"],"declared-delay null")
+            if delay:
+                wrong = self.command("compare","--dry",folder/"input.wav","--wet",path,"--start",100,"--end",8000,"--latency-samples",delay-1)
+                if wrong["residualRms"] < .01:
+                    raise AssertionError("one-sample misalignment was hidden")
+            metrics[str(delay)] = result
+        return metrics
+
     def malformed(self, folder, kind):
         target = folder / "input.wav"
         if kind == "truncated":
@@ -228,6 +377,23 @@ class Runner:
         write_json(folder / "invalid-session.json", session)
         return self.command("render", "--source", folder / "input.wav", "--out", folder / "output.wav",
                             "--session", folder / "invalid-session.json", reject=True)
+
+    def parameter_boundaries(self, folder):
+        # Frozen scalar limits from the public contract; do not derive expected
+        # acceptance by asking the implementation's validator.
+        limits = {"inputDb":(-24,24),"thresholdDb":(-60,0),"ratio":(1,20),"attackMs":(.1,100),
+                  "releaseMs":(10,2000),"kneeDb":(0,24),"makeupDb":(-24,24),"lowDb":(-18,18),
+                  "midDb":(-18,18),"highDb":(-18,18),"midHz":(20,20000),"midQ":(.2,10),
+                  "driveDb":(0,36),"toneHz":(20,20000),"outputDb":(-24,24)}
+        write_float_wav(folder/"input.wav",fixture("impulse",frames=33))
+        metrics = {}
+        for key,(lo,hi) in limits.items():
+            for label,value,reject in (("minimum",lo,False),("maximum",hi,False),("below",lo-1,True),("above",hi+1,True),("coercion",str(lo),True)):
+                session = folder/f"{key}-{label}.json"
+                write_json(session,{"schema_version":1,"parameters":{key:value}})
+                result = self.command("render","--source",folder/"input.wav","--out",folder/f"{key}-{label}.wav","--session",session,"--overwrite",reject=reject)
+                metrics[f"{key}/{label}"] = {"rejected":bool(result.get("rejected",False))}
+        return metrics
 
     def no_clobber(self, folder, sidecar=False):
         write_float_wav(folder / "input.wav", fixture("impulse"))
@@ -264,18 +430,23 @@ class Runner:
                                ("unknown", {"schema_version": 1, "parameters": {"unknown": 1}}),
                                ("ratio", {"schema_version": 1, "parameters": {"ratio": 0}})):
                 self.case("STATE-REJECT-" + name, ["STATE-VALIDATION"], ["TS-011"], lambda f, d=data: self.bad_session(f, d))
+            self.case("STATE-PARAMETER-BOUNDARIES", ["STATE-VALIDATION"], ["TS-011"], self.parameter_boundaries)
         elif suite == "dsp":
             for kind in ("silence", "impulse", "noise", "multitone"):
                 self.case("CMP-UNITY-" + kind, ["CMP-UNITY", "EXPORT-ROUNDTRIP"], ["TS-007", "TS-013"], lambda f, k=kind: self.identity(f, k))
             self.case("DSP-BLOCK-001", ["DSP-BLOCK"], ["TS-004"], self.block)
             self.case("DSP-GAIN-001", ["CMP-GAIN"], ["TS-007"], self.gain)
             self.case("DSP-COMP-STATIC-001", ["DSP-COMP"], ["TS-004"], self.compressor)
-            self.case("DSP-QUALIFICATION-PENDING", ["DSP-EQ", "DSP-DRIVE", "DSP-XOVER"], ["TS-004", "TS-010"],
-                      reason="Independent EQ, compressor timing, crossover and converged alias references are not implemented; no qualification claim.")
+            self.case("DSP-EQ-TRANSFER-001", ["DSP-EQ"], ["TS-004"], self.eq)
+            self.case("DSP-COMP-TIMING-001", ["DSP-COMP"], ["TS-004"], self.compressor_timing)
+            self.case("DSP-DOMAIN-CHANNEL-001", ["CMP-PHASE", "IO-LIMIT"], ["TS-001", "TS-007"], self.channels_and_domain)
+            self.case("DSP-XOVER-COMPLEX-001", ["DSP-XOVER"], ["TS-010"], self.crossover)
+            self.case("DSP-ALIAS-CONVERGENCE-001", ["DSP-DRIVE", "GRAPH-LATENCY"], ["TS-004", "TS-010"], self.alias)
         elif suite == "integration":
             self.case("RENDER-RESET-001", ["EXPORT-ROUNDTRIP", "EXPORT-PROVENANCE"], ["TS-013"], self.deterministic)
             self.case("CMP-MATCH-001", ["CMP-MATCH", "CMP-GAIN"], ["TS-005", "TS-007"], self.compare)
             self.case("CMP-SILENCE-001", ["CMP-SILENCE"], ["TS-005"], lambda f: self.compare(f, True))
+            self.case("CMP-DELAY-DECLARED-001", ["CMP-DELAY", "CMP-PHASE"], ["TS-005", "TS-007"], self.delay_alignment)
             self.case("EVAL-MUTATION-001", ["EVAL-MUTATION"], ["TS-016"], self.mutation)
             self.case("EXPORT-NOCLOBBER-AUDIO", ["EXPORT-NOCLOBBER"], ["TS-013"], self.no_clobber)
             self.case("EXPORT-NOCLOBBER-MANIFEST", ["EXPORT-NOCLOBBER"], ["TS-013"], lambda f: self.no_clobber(f, True))

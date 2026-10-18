@@ -43,6 +43,14 @@ def validate_manifest(path):
         return errors
     if manifest["schema_version"] != 1:
         errors.append("unsupported schema_version")
+    if manifest["edition"] not in ("D2", "D3"):
+        errors.append("release requires D2 or D3 edition; D1 is an unqualified development build")
+    if not all(isinstance(x, str) for x in manifest["shipped_requirements"]):
+        errors.append("shipped_requirements must contain requirement IDs")
+        return errors
+    required_requirements = {f"TS-{n:03d}" for n in range(1,17)} - ({"TS-015"} if manifest["edition"] == "D2" else set())
+    if required_requirements - set(manifest["shipped_requirements"]):
+        errors.append("edition requirement coverage is incomplete")
     if not COMMIT.fullmatch(manifest["commit_sha"]):
         errors.append("invalid commit_sha")
     try:

@@ -35,7 +35,7 @@ def grade_proposal(task, proposal):
             if not isinstance(ref, dict) or set(ref) != {"measurement_id", "value", "unit"}:
                 errors.append("proposal evidence schema")
                 continue
-            measurement = task["measurements"].get(ref["measurement_id"])
+            measurement = task["measurements"].get(ref["measurement_id"]) if isinstance(ref["measurement_id"],str) else None
             if (not measurement or not measurement["valid"] or ref["unit"] != measurement["unit"]
                 or type(ref["value"]) not in (int, float) or not math.isfinite(ref["value"])
                 or abs(ref["value"] - measurement["value"]) > measurement["tolerance"]):
@@ -50,7 +50,10 @@ def grade_proposal(task, proposal):
                 errors.append("proposal patch schema")
                 continue
             key = (patch["stage_id"], patch["parameter_id"])
-            bound = task["allowed_parameters"].get("/".join(key)) if all(isinstance(x, str) for x in key) else None
+            if not all(isinstance(x,str) for x in key):
+                errors.append("proposal unauthorized parameter/unit/range")
+                continue
+            bound = task["allowed_parameters"].get("/".join(key))
             if (not bound or key in seen or patch["unit"] != bound["unit"] or type(patch["value"]) not in (int, float)
                 or not math.isfinite(patch["value"]) or not bound["min"] <= patch["value"] <= bound["max"]):
                 errors.append("proposal unauthorized parameter/unit/range")
@@ -85,7 +88,7 @@ def grade(task, response):
         errors.append("claim schema")
     else:
         for ref in refs:
-            measurement = task["measurements"].get(ref.get("measurement_id")) if isinstance(ref, dict) else None
+            measurement = task["measurements"].get(ref.get("measurement_id")) if isinstance(ref, dict) and isinstance(ref.get("measurement_id"),str) else None
             if (not measurement or not measurement["valid"] or set(ref) != {"measurement_id", "value", "unit"}
                 or ref["unit"] != measurement["unit"] or type(ref["value"]) not in (int,float)
                 or not math.isfinite(ref["value"]) or abs(ref["value"] - measurement["value"]) > measurement["tolerance"]):
@@ -96,7 +99,24 @@ def grade(task, response):
         errors.append("invalid usage accounting")
     elif usage["tool_calls"] > task["max_calls"]:
         errors.append("tool budget exceeded")
-    return {"pass": not errors, "errors": errors, "critical": any(x != "wrong task outcome" for x in errors)}
+    objectives = task.get("objectives")
+    objective_success = None
+    if task["feasible"] and objectives:
+        objective_success = not errors and response["status"] in ("ready","noop")
+        measurements = response["preview"].get("measurements",{}) if isinstance(response["preview"],dict) else task["measurements"]
+        if isinstance(measurements,list):
+            measurements = {m["measurement_id"]:{"value":m["value"],"unit":m["unit"],"valid":True}
+                            for m in measurements if isinstance(m,dict) and set(m)=={"measurement_id","value","unit"} and isinstance(m["measurement_id"],str)}
+        for constraint in objectives:
+            measurement = measurements.get(constraint["measurement_id"])
+            if (not isinstance(measurement,dict) or measurement.get("valid") is not True or measurement.get("unit") != constraint["unit"]
+                or type(measurement.get("value")) not in (int,float) or not math.isfinite(measurement["value"])):
+                objective_success = False
+            elif not ((constraint["operator"]=="le" and measurement["value"]<=constraint["bound"]) or (constraint["operator"]=="ge" and measurement["value"]>=constraint["bound"])):
+                objective_success = False
+    return {"pass": not errors, "errors": errors, "critical": any(x != "wrong task outcome" for x in errors),
+            "objective_success": objective_success,
+            "visible_failure_outcome": response["status"] in ("failed","timed_out","canceled")}
 
 
 def response_for(task, mode="rules"):
@@ -174,16 +194,17 @@ def replay(folder, split):
             response = response_for(task, mode)
             result = grade(task, response)
             records.append({"task_id": task["task_id"], "parent_group": task["parent_group"], "mode": mode,
-                            "response": response, "grade": result, "score": int(result["pass"]),
+                            "response": response, "grade": result, "score": int(result["pass"]) if task["feasible"] else None,
                             "provider": None, "snapshot": None, "prompt_sha256": canonical_hash(task),
                             "input_tokens": 0, "output_tokens": 0, "cost_usd": 0, "latency_ms": None})
     blocked = [{"mode": m, "status": "blocked", "reason": "No approved provider/snapshot, budget or captured executions; no live-model quality claim"}
                for m in ("single-model-no-tools", "tool-grounded", "grounding-disabled")]
-    intervals = {m: clustered_interval([r for r in records if r["mode"] == m]) for m in ("no-assistant", "rules")}
-    paired = [{"task_id": t["task_id"], "score": int(grade(t, response_for(t))["pass"]) - int(grade(t, response_for(t, "no-assistant"))["pass"])} for t in tasks]
+    intervals = {m: clustered_interval([r for r in records if r["mode"] == m and r["score"] is not None]) for m in ("no-assistant", "rules")}
+    paired = [{"task_id": t["task_id"], "score": int(grade(t, response_for(t))["pass"]) - int(grade(t, response_for(t, "no-assistant"))["pass"])} for t in tasks if t["feasible"]]
     evidence = {"schema_version": 1, "kind": "protocol-baseline-replay", "split": split,
                 "corpus_sha256": canonical_hash(tasks), "records": records, "blocked_modes": blocked,
-                "intervals": intervals, "paired_rules_minus_no_assistant": clustered_interval(paired),
+                "feasible_protocol_intervals": intervals, "paired_protocol_rules_minus_no_assistant": clustered_interval(paired),
+                "objective_audio_task_success": None,
                 "holdout_qualified": False, "reason": "Seed cases are inspectable regression fixtures; final sequestered holdout and live runs unavailable"}
     (folder / "replay.json").write_text(json.dumps(evidence, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     return {"tasks": len(tasks), "records": len(records), "blocked_model_modes": len(blocked), "cost_usd": 0}
