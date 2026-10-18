@@ -4,6 +4,9 @@ import math
 import re
 from pathlib import Path
 from oracles import sha256
+from provenance import git, source_identity, runtime_files
+
+ROOT = Path(__file__).resolve().parents[1]
 
 HASH = re.compile(r"^[0-9a-f]{64}$")
 COMMIT = re.compile(r"^[0-9a-f]{40}$")
@@ -42,6 +45,13 @@ def validate_manifest(path):
         errors.append("unsupported schema_version")
     if not COMMIT.fullmatch(manifest["commit_sha"]):
         errors.append("invalid commit_sha")
+    try:
+        if git(ROOT, "rev-parse", "HEAD") != manifest["commit_sha"]:
+            errors.append("release manifest must identify the exact checkout HEAD")
+        if git(ROOT, "status", "--porcelain"):
+            errors.append("release validation requires a clean working tree")
+    except Exception as exc:
+        errors.append(f"cannot verify release checkout: {exc}")
     base = Path(path).resolve().parent
 
     def file_ref(ref, label):
@@ -59,8 +69,9 @@ def validate_manifest(path):
             return None
         return target
 
-    for key in ("unsigned_payload", "packaged_artifact", "notices", "sbom"):
-        file_ref(manifest[key], key)
+    assets = {key: file_ref(manifest[key], key) for key in ("unsigned_payload", "packaged_artifact", "notices", "sbom")}
+    if len({str(p) for p in assets.values() if p}) != 4:
+        errors.append("payload, package, notices and SBOM must be distinct evidence files")
     for key in ("toolchain", "dsp_generator"):
         value = manifest[key]
         if not all(isinstance(value.get(k), str) and value[k] for k in ("name", "version")):
@@ -107,7 +118,9 @@ def validate_manifest(path):
                                 d.get("reviewer") and d.get("date") and d.get("commit_sha") == manifest["commit_sha"] for d in decisions):
         errors.append("explicit reviewer approval for this commit is required")
     mapping = json.loads((Path(__file__).parent / "coverage.json").read_text())["requirements"]
+    gates = json.loads((Path(__file__).parent / "gates.json").read_text())
     families, cases, suites = set(), {}, set()
+    run_ids = set()
     if not manifest["required_suites"]:
         errors.append("required_suites is empty")
     for ref in manifest["required_suites"]:
@@ -120,6 +133,31 @@ def validate_manifest(path):
                 errors.append("suite must pass at the manifest commit")
             if run.get("working_tree_dirty") is not False:
                 errors.append("release suite must come from a clean working tree")
+            if (run.get("started_working_tree_dirty") is not False or run.get("source_unchanged") is not True
+                or run.get("runtime_unchanged") is not True or run.get("source_identity_sha256") != source_identity(ROOT)):
+                errors.append("suite source identity is missing, changed or differs from checkout")
+            if run.get("gates_sha256") != sha256(Path(__file__).parent / "gates.json"):
+                errors.append("suite frozen gates identity mismatch")
+            identities = run.get("runtime_files")
+            if not isinstance(identities, list) or not identities:
+                errors.append("suite lacks verifiable runtime files")
+            else:
+                actual_files = []
+                for identity in identities:
+                    verified_path = file_ref(identity, "runtime identity")
+                    if verified_path:
+                        actual_files.append({"path": str(verified_path), "sha256": sha256(verified_path)})
+                binaries = [r for r in actual_files if r["sha256"] == run.get("cli_sha256")]
+                if len(binaries) != 1:
+                    errors.append("suite CLI hash must resolve to one actual runtime file")
+                elif actual_files != runtime_files(ROOT, binaries[0]["path"]):
+                    errors.append("runtime inventory differs from evaluator and binary on disk")
+            for field, filename in (("runner_sha256", "run.py"), ("oracle_sha256", "oracles.py")):
+                if run.get(field) != sha256(Path(__file__).parent / filename):
+                    errors.append(f"suite {field} differs from executed evaluator")
+            if run.get("run_id") in run_ids or run.get("suite") in suites:
+                errors.append("duplicate suite or run identity")
+            run_ids.add(run.get("run_id"))
             for identity in ("cli_sha256", "runner_sha256", "oracle_sha256"):
                 if not HASH.fullmatch(str(run.get(identity, ""))):
                     errors.append(f"suite lacks {identity}")
@@ -127,8 +165,12 @@ def validate_manifest(path):
             if not isinstance(run.get("results"), list) or not run["results"]:
                 errors.append("suite has no case evidence")
                 continue
+            expected = set(gates["required_cases"].get(run.get("suite"), []))
+            observed = [c.get("case_id") for c in run["results"] if isinstance(c, dict)]
+            if not expected or set(observed) != expected or len(observed) != len(set(observed)):
+                errors.append("suite case inventory differs from frozen required cases")
             for case in run["results"]:
-                if not isinstance(case, dict) or case.get("status") != "pass" or case.get("commit_sha") != manifest["commit_sha"] or case.get("run_id") != run.get("run_id"):
+                if not isinstance(case, dict) or case.get("status") != "pass" or case.get("commit_sha") != manifest["commit_sha"] or case.get("run_id") != run.get("run_id") or case.get("suite") != run.get("suite"):
                     errors.append("suite contains nonpassing/inconsistent case")
                     continue
                 def valid_measurements(value):

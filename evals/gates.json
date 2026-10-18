@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "version": "development-gates-v1",
+  "identity_max_abs": 0.000001,
+  "identity_residual_rms": 0.00001,
+  "block_max_abs": 0.00001,
+  "eq_db": 0.2,
+  "compressor_db": 0.25,
+  "compressor_timing_relative": 0.1,
+  "compressor_timing_samples": 2,
+  "crossover_db": 0.25,
+  "alias_improvement_db": 10,
+  "ai_numeric_grounding": 0.99,
+  "ai_abstention": 0.95,
+  "ai_task_success": 0.85,
+  "required_cases": {
+    "contracts": ["IO-DECODE-001", "IO-DECODE-ONE-FRAME", "IO-MALFORMED-corrupt", "IO-MALFORMED-truncated", "IO-MALFORMED-huge", "IO-MALFORMED-nonfinite", "STATE-REJECT-version", "STATE-REJECT-unknown", "STATE-REJECT-ratio"],
+    "dsp": ["CMP-UNITY-silence", "CMP-UNITY-impulse", "CMP-UNITY-noise", "CMP-UNITY-multitone", "DSP-BLOCK-001", "DSP-GAIN-001", "DSP-COMP-STATIC-001", "DSP-QUALIFICATION-PENDING"],
+    "integration": ["RENDER-RESET-001", "CMP-MATCH-001", "CMP-SILENCE-001", "EVAL-MUTATION-001", "EXPORT-NOCLOBBER-AUDIO", "EXPORT-NOCLOBBER-MANIFEST"]
+  }
+}
