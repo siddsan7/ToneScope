@@ -49,11 +49,21 @@ class Runner:
         self.initial_source = source_identity(ROOT)
         self.initial_dirty = git_dirty()
         self.runtime = runtime_files(ROOT, self.cli)
+        self.command_index = 0
+        self.active_folder = self.out
 
     def command(self, *args, reject=False):
         if not self.cli or not Path(self.cli).is_file():
             raise FileNotFoundError("native --cli executable is required")
-        proc = subprocess.run([self.cli, *map(str, args)], capture_output=True, text=True, timeout=30)
+        argv = [self.cli, *map(str, args)]
+        self.command_index += 1
+        record_path = self.active_folder / f"command-{self.command_index:04d}.json"
+        try:
+            proc = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+        except subprocess.TimeoutExpired as exc:
+            write_json(record_path, {"argv": argv, "status": "timed_out", "stdout": str(exc.stdout or ""), "stderr": str(exc.stderr or "")})
+            raise
+        write_json(record_path, {"argv": argv, "returncode": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr})
         if reject:
             if proc.returncode == 0:
                 raise AssertionError("invalid input was accepted")
@@ -71,6 +81,7 @@ class Runner:
     def case(self, case_id, families, requirements, fn=None, reason=None):
         folder = self.out / case_id
         folder.mkdir(exist_ok=True)
+        self.active_folder = folder
         result = {"schema_version": 1, "run_id": self.run_id, "case_id": case_id,
                   "suite": self.args.suite, "families": families, "requirement_ids": requirements,
                   "commit_sha": self.commit, "oracle_version": VERSION,
@@ -268,6 +279,11 @@ class Runner:
             self.case("EVAL-MUTATION-001", ["EVAL-MUTATION"], ["TS-016"], self.mutation)
             self.case("EXPORT-NOCLOBBER-AUDIO", ["EXPORT-NOCLOBBER"], ["TS-013"], self.no_clobber)
             self.case("EXPORT-NOCLOBBER-MANIFEST", ["EXPORT-NOCLOBBER"], ["TS-013"], lambda f: self.no_clobber(f, True))
+        elif suite == "ai-replay":
+            from ai import replay
+            self.case("AI-PROTOCOL-BASELINES", ["AI-CONTRACT"], ["TS-015"], lambda f: replay(f, self.args.split))
+            self.case("AI-LIVE-QUALIFICATION-PENDING", ["AI-TASK", "AI-ATTACK", "AI-APPLY"], ["TS-015"],
+                      reason="Deterministic protocol fixtures cannot qualify live models, product tool authorization or human preference; approved live runs and final holdout unavailable.")
         else:
             self.case("AI-QUALIFICATION-PENDING", ["AI-CONTRACT", "AI-TASK", "AI-ATTACK", "AI-APPLY"], ["TS-015"],
                       reason="AI implementation, approved corpus, credentials/budget and locked split evidence are unavailable; no mock pass.")

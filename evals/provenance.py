@@ -23,7 +23,7 @@ def source_identity(root):
 
 def runtime_files(root, cli):
     paths = [Path(p) for p in sorted((Path(root) / "evals").rglob("*.py"))]
-    paths += [Path(root) / "evals/gates.json", Path(root) / "evals/coverage.json"]
+    paths += [Path(p) for p in sorted((Path(root) / "evals").rglob("*.json"))]
     if cli:
         paths.append(Path(cli))
     return [{"path": str(p.resolve()), "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
