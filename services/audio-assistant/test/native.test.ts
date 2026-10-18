@@ -46,6 +46,8 @@ assets.set('native_session',{...assets.get('native_session')!,snapshot:{...snaps
 await assert.rejects(adapter.measurements(snapshot,new AbortController().signal),/stale_native_asset/);
 await writeFile(source,Buffer.from('tampered'));
 assert.equal((await service.run({schema_version:1,request_id:'native_2',session_id:'native_session',prompt:'make louder'})).reason,'source_digest_mismatch');
+const previewPath=adapter.previewPath('native_session',output.preview.preview_id);await adapter.releasePreview('f'.repeat(64),output.preview.preview_id);assert.ok(await readFile(previewPath));
+const reopened=new NativeCliAdapter(executable!,assets,join(dir,'previews'));await reopened.releasePreview(createHash('sha256').update('native_session').digest('hex'),output.preview.preview_id);await assert.rejects(readFile(previewPath),/ENOENT/);
 await adapter.deleteSession('native_session');
 }finally{await rm(dir,{recursive:true,force:true});
 }});

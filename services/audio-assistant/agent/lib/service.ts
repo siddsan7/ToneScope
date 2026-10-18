@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID,createHash } from 'node:crypto';
 import { z } from 'zod';
 import { snapshotSchema, measurementSchema, previewSchema, proposalSchema, requestSchema, renderInput, previewInput, emptyInput, type Snapshot, type Measurement, type Patch, type Preview, type Proposal, type RequestInput, type NativeAdapter, type Envelope, type Usage } from './contracts.ts';
 import { StateStore } from './store.ts';
@@ -19,6 +19,8 @@ output_usd_per_million:number;
 pricing_source:string};
 const same=(a:Snapshot,b:Snapshot)=>a.session_id===b.session_id&&a.session_revision===b.session_revision&&a.source_sha256===b.source_sha256&&a.base_graph_sha256===b.base_graph_sha256&&JSON.stringify(a.selection_samples)===JSON.stringify(b.selection_samples);
 export class RequestTools {
+ async releaseUnused(keep?:string){for(const id of this.previews.keys())if(id!==keep){await this.native.releasePreview?.(createHash('sha256').update(this.request.session_id).digest('hex'),id);this.previews.delete(id);}}
+
  readonly usage:Usage={tool_calls:0,candidate_frames:0,input_tokens:0,output_tokens:0,cost_usd:0,latency_ms:0};
  private base?:Snapshot;
  private evidence:Measurement[]=[];
@@ -139,6 +141,8 @@ return {status:'ready' as const,preview_id:preview.preview_id,proposal:{schema_v
 }
 }
 export class AssistantService {
+ private admitted=new Map<string,string>();
+ private admissionLimits:{global:number,per_session:number};
  private active=new Map<string,{session:string;
 controller:AbortController}>();
 private seen=new Set<string>();
@@ -147,7 +151,7 @@ private deleting=new Set<string>();
 private store:StateStore;
 private provider:Provider;
 private livePolicy?:LivePolicy;
-constructor(native:NativeAdapter,store:StateStore,provider:Provider=new RulesProvider(),livePolicy?:LivePolicy){this.native=native;
+constructor(native:NativeAdapter,store:StateStore,provider:Provider=new RulesProvider(),livePolicy?:LivePolicy,admissionLimits={global:2,per_session:1}){this.admissionLimits=admissionLimits;for(const value of Object.values(admissionLimits))if(!Number.isSafeInteger(value)||value<=0)throw Error('admission_limits_invalid');this.native=native;
 this.store=store;
 this.provider=provider;
 this.livePolicy=livePolicy;
@@ -164,6 +168,8 @@ await this.native.deleteSession?.(session);
 const r=requestSchema.parse(raw);
 if(this.deleting.has(r.session_id))throw Error('session_deleted');
 if(this.seen.has(r.request_id))throw Error('duplicate_request');
+if(this.admitted.size>=this.admissionLimits.global||[...this.admitted.values()].filter(session=>session===r.session_id).length>=this.admissionLimits.per_session)throw Error('assistant_busy');
+this.admitted.set(r.request_id,r.session_id);try{
 this.seen.add(r.request_id);
 if(await this.store.load(r.session_id,r.request_id))throw Error('duplicate_request');
 const start=Date.now();
@@ -192,7 +198,9 @@ result={...result,status:reason==='canceled'?'canceled':reason==='timed_out'?'ti
 this.active.delete(r.request_id);
 result.usage.latency_ms=Date.now()-start;
 }if(reservedCost>0){await this.store.updateBudget(this.livePolicy!.budget_usd,t.usage.cost_usd-reservedCost,true);}
-if(!this.deleting.has(r.session_id))await this.store.save(r.session_id,result);
+await t.releaseUnused(result.preview?.preview_id);
+if(!this.deleting.has(r.session_id)){const removed=await this.store.save(r.session_id,result);for(const item of removed)await this.native.releasePreview?.(item.session_hash,item.preview_id);}
 return result;
+}finally{this.admitted.delete(r.request_id);}
 }
 }

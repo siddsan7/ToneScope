@@ -36,6 +36,7 @@ evidence_refs:Measurement[]};
 export interface NativeAdapter { renderFrameCost?(snapshot:Snapshot,signal:AbortSignal):Promise<number>;
  verifyPreview?(snapshot:Snapshot,preview:Preview,signal:AbortSignal):Promise<void>;
  deleteSession?(sessionId:string):Promise<void>;
+ releasePreview?(sessionHash:string,previewId:string):Promise<void>;
  snapshot(sessionId:string,signal:AbortSignal):Promise<unknown>;
  measurements(snapshot:Snapshot,signal:AbortSignal):Promise<unknown>;
  render(snapshot:Snapshot,patch:Patch[],signal:AbortSignal):Promise<unknown>;

@@ -27,7 +27,7 @@ const assets=new Map(c.assets.map(a=>[a.snapshot.session_id,a]));
 const native=new NativeCliAdapter(c.executable,async()=>{const fresh=config.parse(JSON.parse(await readFile(manifestPath,'utf8')));
 return new Map(fresh.assets.map(a=>[a.snapshot.session_id,a]));
 },c.work_directory);
-const store=new StateStore(c.state_directory);
+const store=new StateStore(c.state_directory);for(const removed of await store.prune())await native.releasePreview(removed.session_hash,removed.preview_id);
 const enableLive=process.env.TONESCOPE_ENABLE_LIVE==='1';
 if(enableLive&&(!c.live||!process.env.AI_GATEWAY_API_KEY))throw Error('live_configuration_and_credentials_required');
 const provider=enableLive?new GatewayProvider(c.live,process.env.AI_GATEWAY_API_KEY!):undefined;

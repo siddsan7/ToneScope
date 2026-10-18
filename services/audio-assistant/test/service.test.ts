@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp,rm,readFile,readdir } from 'node:fs/promises';
+import { mkdtemp,rm,readFile,readdir,writeFile,utimes,stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AssistantService,RequestTools,RulesProvider,type Provider } from '../agent/lib/service.ts';
@@ -169,4 +169,41 @@ if(output.status==='ready')assert.equal(output.proposal.parameter_patch[0].value
 f.adapter.measurements=async()=>[{measurement_id:'rms_dbfs',value:-24,unit:'dBFS'},{measurement_id:'peak_dbfs',value:-1,unit:'dBFS'}];
 output=await new RulesProvider().run(request,new RequestTools(request,f.adapter,new AbortController().signal));
 assert.equal(output.status,'noop');
+});
+
+test('request admission caps are atomic globally and per session; busy IDs remain usable',async()=>{
+ let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);let entered=0;
+ const provider:Provider={kind:'replay',async run(){entered++;await gate;return {status:'noop',reason:'held'};}};
+ const x=await setup(provider);try{
+  const first=x.service.run({...request,request_id:'busy_first'});await new Promise(r=>setTimeout(r,10));
+  await assert.rejects(x.service.run({...request,request_id:'busy_session'}),/assistant_busy/);
+  const second=x.service.run({...request,session_id:'session_2',request_id:'busy_second'});await new Promise(r=>setTimeout(r,10));
+  await assert.rejects(x.service.run({...request,session_id:'session_3',request_id:'busy_global'}),/assistant_busy/);assert.equal(entered,2);
+  release();await Promise.all([first,second]);assert.equal((await x.service.run({...request,request_id:'busy_session'})).status,'noop');
+ }finally{release();await x.cleanup();}
+});
+test('history count age and byte retention protects newest result and currency ledger; service releases only owned historical previews',async()=>{
+ const x=await setup();try{
+  const released:{session_hash:string,preview_id:string}[]=[];x.adapter.releasePreview=async(session_hash,preview_id)=>{released.push({session_hash,preview_id});};
+  const store=new StateStore(x.directory,{max_records:1,max_bytes:8192,max_age_ms:1000});const service=new AssistantService(x.adapter,store);
+  const first=await service.run({...request,request_id:'retain_first'});assert.ok(first.preview);
+  await store.updateBudget(10,2);const ledger=await readFile(join(x.directory,'budget.json'),'utf8');
+  const second=await service.run({...request,request_id:'retain_second'});assert.ok(second.preview);
+  assert.equal(await store.load(request.session_id,'retain_first'),undefined);assert.equal((await store.load(request.session_id,'retain_second'))?.request_id,'retain_second');
+  assert.deepEqual(released.map(x=>x.preview_id),[first.preview.preview_id]);assert.notEqual(released[0].preview_id,second.preview.preview_id);
+  const rows=(await readdir(x.directory)).filter(name=>/^[a-f0-9]{64}\.json$/.test(name));assert.equal(rows.length,1);await utimes(join(x.directory,rows[0]),new Date(0),new Date(0));assert.equal((await store.prune()).length,1);assert.equal(await readFile(join(x.directory,'budget.json'),'utf8'),ledger);
+  const roomy=new StateStore(x.directory,{max_records:10,max_bytes:8192});await roomy.save('s',{...second,request_id:'bytes_first'});const record=(await readdir(x.directory)).find(name=>/^[a-f0-9]{64}\.json$/.test(name))!;const recordBytes=(await stat(join(x.directory,record))).size;
+  const tight=new StateStore(x.directory,{max_records:10,max_bytes:recordBytes+20});await tight.save('s',{...second,request_id:'bytes_second'});assert.equal(await tight.load('s','bytes_first'),undefined);assert.ok(await tight.load('s','bytes_second'));assert.equal(await readFile(join(x.directory,'budget.json'),'utf8'),ledger);
+  await assert.rejects(new StateStore(x.directory,{max_bytes:10}).save('s',second),/history_record_bytes_limit/);
+ }finally{await x.cleanup();}
+});
+
+test('history pruning never releases a candidate belonging to an in-flight request',async()=>{
+ const x=await setup();let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);let entered!:()=>void;const started=new Promise<void>(resolve=>entered=resolve);const released:string[]=[];
+ x.adapter.releasePreview=async(_owner,id)=>{released.push(id);};const rules=new RulesProvider();const provider:Provider={kind:'rules',async run(r,t,signal){const result=await rules.run(r,t);if(r.request_id==='held_candidate'){entered();await gate;}return result;}};
+ const service=new AssistantService(x.adapter,new StateStore(x.directory,{max_records:1}),provider,undefined,{global:2,per_session:2});try{
+  await service.run({...request,request_id:'historical_candidate'});const held=service.run({...request,request_id:'held_candidate'});await started;
+  const newer=await service.run({...request,request_id:'newer_candidate'});assert.equal(newer.status,'ready');assert.deepEqual(released,['preview_1']);assert.ok(!released.includes('preview_2'));assert.ok(!released.includes('preview_3'));
+  release();assert.equal((await held).status,'ready');assert.ok(!released.includes('preview_2'));
+ }finally{release();await x.cleanup();}
 });

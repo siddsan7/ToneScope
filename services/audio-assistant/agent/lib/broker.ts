@@ -51,7 +51,7 @@ reply(200,{status:'deleted'});
 return;
 }
  reply(404,{error:'unknown_route'});
- }catch{reply(400,{error:'invalid_or_failed_request'});
+ }catch(error){if(error instanceof Error&&error.message==='assistant_busy')reply(429,{error:'assistant_busy'});else reply(400,{error:'invalid_or_failed_request'});
 }});
 }
 export async function listenLoopback(server:ReturnType<typeof createBroker>,port=0){await new Promise<void>((resolve,reject)=>{server.once('error',reject);

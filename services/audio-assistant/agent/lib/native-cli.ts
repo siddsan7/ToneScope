@@ -1,7 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { createHash,randomUUID } from 'node:crypto';
-import { readFile,mkdir,writeFile,rm } from 'node:fs/promises';
+import { readFile,mkdir,writeFile,rm,lstat } from 'node:fs/promises';
 import { isAbsolute,join } from 'node:path';
 import { z } from 'zod';
 import { baselineMetricsSchema,snapshotSchema,type NativeAdapter,type Snapshot,type Patch,type Preview } from './contracts.ts';
@@ -89,6 +89,7 @@ parameters[p.parameter_id]=p.value;
 const preview_id=randomUUID();
 const folder=join(this.workDirectory,preview_id);
 await mkdir(folder,{mode:0o700});
+await writeFile(join(folder,'owner.json'),JSON.stringify({schema_version:1,session_hash:createHash('sha256').update(s.session_id).digest('hex'),preview_id}),{mode:0o600,flag:'wx'});
 const output=join(folder,'preview.wav');
 const config=join(folder,'session.json');
 try{await writeFile(config,JSON.stringify({schema_version:1,source_sha256:s.source_sha256,parameters}),{mode:0o600,flag:'wx'});
@@ -121,6 +122,13 @@ signal.throwIfAborted();
 if(!p||p.session!==session)throw Error('unknown_preview');
 return p.path;
 }
+ async releasePreview(sessionHash:string,previewId:string){
+ if(!/^[a-f0-9]{64}$/.test(sessionHash)||!z.uuid().safeParse(previewId).success)return;
+ const p=this.previews.get(previewId);if(p&&createHash('sha256').update(p.session).digest('hex')!==sessionHash)return;
+ const folder=join(this.workDirectory,previewId);try{if((await lstat(folder)).isSymbolicLink())throw Error('preview_owner_redirect');const ownerPath=join(folder,'owner.json');if((await lstat(ownerPath)).isSymbolicLink())throw Error('preview_owner_redirect');const owner=z.object({schema_version:z.literal(1),session_hash:z.string(),preview_id:z.string()}).strict().parse(JSON.parse(await readFile(ownerPath,'utf8')));if(owner.session_hash!==sessionHash||owner.preview_id!==previewId)return;
+ }catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return;throw error;}
+ this.previews.delete(previewId);await rm(folder,{recursive:true,force:true});
+ }
  async deleteSession(session:string){for(const [id,p] of this.previews)if(p.session===session){this.previews.delete(id);
 await rm(join(this.workDirectory,id),{recursive:true,force:true});
 }}
