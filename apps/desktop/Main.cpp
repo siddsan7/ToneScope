@@ -12,6 +12,12 @@
 #include <tonescope/Engine.h>
 
 #include <tonescope/Session.h>
+#include <tonescope/ParameterState.h>
+#include "CaptureWorker.h"
+#include "SessionRecovery.h"
+#if __has_include("AssistantBridge.h")
+#include "AssistantBridge.h"
+#endif
 
 #include <atomic>
 
@@ -26,6 +32,7 @@
 #include <optional>
 
 #include <stdexcept>
+#include <cstdlib>
 
 
 
@@ -37,7 +44,7 @@ constexpr double maxSeconds = 120.0;
 
 struct Rendered {
 
-    std::shared_ptr<const tonescope::AudioData> raw, dry, wet;
+    std::shared_ptr<const tonescope::AudioData> raw, dry, wet, exportWet;
 
     juce::String graphKey;
 
@@ -218,11 +225,11 @@ public:
 
         live.setButtonText("Monitor live input");live.setTitle("Explicitly enable input monitoring. Use headphones.");live.onClick=[this]{setLive(live.getToggleState());};addAndMakeVisible(live);
 
-        match.setButtonText("Freeze RMS match");match.setTitle("Match processed RMS to dry over selected passage, capped at 12 dB");match.onClick=[this]{requestRender();};addAndMakeVisible(match);
+        match.setButtonText("Freeze RMS match");match.setTitle("Match processed RMS to dry over selected passage, capped at 12 dB");match.onClick=[this]{markRecovery();requestRender();};addAndMakeVisible(match);
 
         for(auto* b:{&loop,&live,&match})b->setWantsKeyboardFocus(true);
 
-        mode.addItemList({"Dry","Processed","Raw residual","RMS-matched residual"},1);mode.setSelectedId(2);mode.setTitle("Audition source");mode.onChange=[this]{if(monitoring&&mode.getSelectedId()>2){mode.setSelectedId(2,juce::dontSendNotification);setStatus("Residual audition is available on captured replay. Live monitoring offers dry and processed.");}audition=mode.getSelectedId();requestRender();};addAndMakeVisible(mode);
+        mode.addItemList({"Dry","Processed","Raw residual","RMS-matched residual"},1);mode.setSelectedId(2);mode.setTitle("Audition source");mode.onChange=[this]{if(monitoring&&mode.getSelectedId()>2){mode.setSelectedId(2,juce::dontSendNotification);setStatus("Residual audition is available on captured replay. Live monitoring offers dry and processed.");}audition=mode.getSelectedId();markRecovery();requestRender();};addAndMakeVisible(mode);
 
         order.addItemList({"Compressor  >  EQ  >  Drive","Drive  >  EQ  >  Compressor","EQ  >  Compressor  >  Drive","Compressor  >  Drive  >  EQ","EQ  >  Drive  >  Compressor","Drive  >  Compressor  >  EQ"},1);order.setSelectedId(1);order.setTitle("Processing stage order");order.onChange=[this]{parametersChanged(true);};addAndMakeVisible(order);
 
@@ -282,10 +289,13 @@ public:
 #else
         juce::ignoreUnused(useWeb);
 #endif
-
+        history.reset(parameters());
+        initialiseAssistant();
+        auto recovery=tonescope::desktop::recoveryDirectory().getChildFile("session.json");
+        if(recovery.existsAsFile())setStatus("A recovery session is available. Ctrl+Shift+R restores it; monitoring remains off.");
     }
 
-    ~Main() override {stopTimer();++revision;pool.removeAllJobs(true,-1);devices.removeAudioCallback(this);devices.closeAudioDevice();juce::Desktop::getInstance().removeDarkModeSettingListener(this);setLookAndFeel(nullptr);}
+    ~Main() override {stopTimer();shutdownAssistant();++revision;recording=false;devices.removeAudioCallback(this);if(captureWorker){captureWorker->interrupt();captureWorker->stop();}pool.removeAllJobs(true,-1);devices.closeAudioDevice();juce::Desktop::getInstance().removeDarkModeSettingListener(this);setLookAndFeel(nullptr);}
 
     void paint(juce::Graphics& g) override {
 
@@ -336,6 +346,12 @@ public:
 
     bool keyPressed(const juce::KeyPress& key) override {
 
+        if(key.getModifiers().isCommandDown()&&key.getKeyCode()=='Z'){if(key.getModifiers().isShiftDown())redoParameters();else undoParameters();return true;}
+        if(key.getModifiers().isCommandDown()&&key.getKeyCode()=='Y'){redoParameters();return true;}
+        if(key.getModifiers().isCommandDown()&&key.getModifiers().isShiftDown()&&key.getKeyCode()=='R'){restoreRecovery();return true;}
+        if(key.getModifiers().isCommandDown()&&key.getModifiers().isShiftDown()&&key.getKeyCode()=='O'){openSession();return true;}
+        if(key.getModifiers().isCommandDown()&&key.getKeyCode()=='E'){exportAudio();return true;}
+
         if(key==juce::KeyPress::spaceKey){togglePlay();return true;}
 
         if(key.getModifiers().isCommandDown()&&key.getKeyCode()=='O'){chooseImport();return true;}
@@ -364,7 +380,7 @@ private:
 
     juce::LookAndFeel_V4 look;
 
-    juce::AudioDeviceManager devices;tonescope::Engine liveEngine;
+    juce::AudioDeviceManager devices;tonescope::Engine liveEngine,liveDryEngine;
 
     juce::ThreadPool pool{1};std::unique_ptr<juce::FileChooser> chooser;
 
@@ -385,15 +401,18 @@ private:
 
     std::atomic<bool> playing{false},monitoring{false},looping{false},recording{false},deviceFault{false};
 
-    std::atomic<int> audition{2};std::atomic<double> position{0};std::atomic<int64_t> selectionStart{0},selectionEnd{0},captureFrames{0};
+    std::atomic<int> audition{2};std::atomic<double> position{0};std::atomic<int64_t> selectionStart{0},selectionEnd{0};
 
     std::atomic<float> outputPeak{0},reduction{0};std::atomic<uint64_t> invalid{0},guardSamples{0};
 
     std::array<tonescope::Parameters,32> commands{};std::atomic<unsigned> commandWrite{0},commandRead{0};
 
-    std::array<std::array<float,chunk>,2> inputScratch{},outputScratch{};
+    std::array<std::array<float,chunk>,2> inputScratch{},outputScratch{},dryScratch{};
 
-    tonescope::AudioData capture;std::atomic<double> deviceRate{48000};std::atomic<double> sourceStep{1};
+    std::shared_ptr<tonescope::desktop::CaptureWorker> captureWorker;juce::File capturePath;
+    tonescope::session::ParameterHistory history;bool restoringParameters=false;
+    bool recoveryDirty=false,captureFinalizing=false;juce::int64 recoveryDue=0;
+    std::atomic<double> deviceRate{48000};std::atomic<double> sourceStep{1};
 
     std::atomic<int> deviceBlock{0};juce::String metricSummary;uint64_t revision=0,renderedRevision=0;int64_t renderDue=0;bool busy=false;
 
@@ -406,7 +425,7 @@ private:
 
         static constexpr const char* keys[]{"inputDb","thresholdDb","ratio","attackMs","releaseMs","kneeDb","makeupDb","lowDb","midDb","midHz","midQ","highDb","driveDb","toneHz","outputDb","crossoverLowHz","crossoverHighHz"};
 
-        auto c=std::make_unique<Control>();c->key=keys[controls.size()];c->member=member;c->label.setText(name,juce::dontSendNotification);c->label.setFont(juce::FontOptions(13.0f));c->slider.setRange(a,b,0.01);c->slider.setValue(v);c->slider.setTextValueSuffix(unit);c->slider.setSliderStyle(juce::Slider::LinearHorizontal);c->slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,90,24);c->slider.setTitle(name);c->slider.setWantsKeyboardFocus(true);c->slider.onValueChange=[this,key=c->key]{parametersChanged(key=="crossoverLowHz"||key=="crossoverHighHz");};addAndMakeVisible(c->label);addAndMakeVisible(c->slider);controls.push_back(std::move(c));
+        auto c=std::make_unique<Control>();c->key=keys[controls.size()];c->member=member;c->label.setText(name,juce::dontSendNotification);c->label.setFont(juce::FontOptions(13.0f));c->slider.setRange(a,b,0);c->slider.setNumDecimalPlacesToDisplay(2);c->slider.setValue(v);c->slider.setTextValueSuffix(unit);c->slider.setSliderStyle(juce::Slider::LinearHorizontal);c->slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,90,24);c->slider.setTitle(name);c->slider.setWantsKeyboardFocus(true);c->slider.onValueChange=[this,key=c->key]{parametersChanged(key=="crossoverLowHz"||key=="crossoverHighHz");};addAndMakeVisible(c->label);addAndMakeVisible(c->slider);controls.push_back(std::move(c));
 
     }
 
@@ -419,12 +438,15 @@ private:
     }
 
     void parametersChanged(bool topology=false){
+        assistantSessionChanged();
 
         if(topology&&monitoring){if(recording)toggleCapture();else setLive(false);setStatus("Signal-chain change stopped monitoring. Re-enable it when ready.");}
 
         auto p=parameters();std::string error;if(!tonescope::validate(p,monitoring?deviceRate.load():(source?source->sampleRate:48000),error)){playing=false;++revision;busy=false;setStatus(error);return;}
 
-        if(topology){detach();liveEngine.setParameters(p);commandRead.store(commandWrite.load());attach();}
+        if(!restoringParameters)history.commit(p);markRecovery();
+
+        if(topology){playing=false;detach();commandRead.store(commandWrite.load());attach();}
         auto w=commandWrite.load();if(w-commandRead.load(std::memory_order_acquire)<commands.size()){commands[w%commands.size()]=p;commandWrite.store(w+1,std::memory_order_release);}else setStatus("Control queue full; pause adjustment and retry.");
 
         if(source&&!monitoring){playing=false;busy=true;renderDue=juce::Time::currentTimeMillis()+180;++revision;setStatus("Settings changed | updating comparison...");}
@@ -436,6 +458,7 @@ private:
     void darkModeSettingChanged() override{applyTheme();}
 
     void timerCallback() override {
+        updateAssistant();
 
         if(deviceFault.exchange(false)){live.setToggleState(false,juce::dontSendNotification);setStatus("Monitoring stopped after a device or control fault. Check Audio devices, then explicitly re-enable.");}
 
@@ -447,7 +470,8 @@ private:
 
         if(rendered){auto t=(double)position.load()/juce::jmax<int64_t>(1,rendered->dry->frames());seek.setValue(t,juce::dontSendNotification);scope.playhead=t;scope.repaint();}
 
-        if(recording&&captureFrames.load()>=(int64_t)capture.samples[0].size()){recording=false;captureButton.setButtonText("Use captured take");setStatus("Capture reached the 120-second limit. Click Use captured take.");}
+        if(captureWorker&&captureWorker->stopped()&&!captureFinalizing){recording=false;finishCapture();}
+        if(recoveryDirty&&juce::Time::currentTimeMillis()>=recoveryDue){recoveryDirty=false;if(sourceFile.existsAsFile()){auto text=juce::JSON::toString(session());pool.addJob(new Job([text]{auto folder=tonescope::desktop::recoveryDirectory();if(folder.createDirectory())tonescope::desktop::saveSessionAtomically(folder.getChildFile("session.json"),text);}),true);}}
 
         if(monitoring){metrics.setText("LIVE | "+juce::String(deviceRate.load(),0)+" Hz | "+juce::String(deviceBlock.load())+" sample buffer | peak "+juce::String(20*std::log10(juce::jmax(1.0e-6f,outputPeak.load())),1)+" dBFS | gain reduction "+juce::String(reduction.load(),1)+" dB | invalid samples "+juce::String((juce::int64)invalid.load())+" | guard interventions "+juce::String((juce::int64)guardSamples.load()),juce::dontSendNotification);}
 
@@ -457,11 +481,11 @@ private:
 
     void togglePlay(){if(rendered&&renderedRevision==revision&&!busy&&!monitoring){if(position>=selectionEnd)position=selectionStart.load();playing=!playing.load();}}
 
-    void audioDeviceAboutToStart(juce::AudioIODevice* d) override {deviceRate=d->getCurrentSampleRate();deviceBlock=d->getCurrentBufferSizeSamples();liveEngine.prepare(deviceRate>=44100&&deviceRate<=96000?deviceRate.load():48000,2);liveEngine.setParameters(parameters());if(rendered)sourceStep=rendered->dry->sampleRate/deviceRate;}
+    void audioDeviceAboutToStart(juce::AudioIODevice* d) override {if(monitoring.exchange(false))deviceFault=true;playing=false;deviceRate=d->getCurrentSampleRate();deviceBlock=d->getCurrentBufferSizeSamples();try{auto p=parameters();liveEngine.prepare(deviceRate.load(),2,p);tonescope::Parameters dry;dry.inputDb=p.inputDb;dry.toneHz=(float)juce::jmin(5000.0,.45*deviceRate.load());liveDryEngine.prepare(deviceRate.load(),2,dry);}catch(...){deviceFault=true;}if(rendered)sourceStep=rendered->dry->sampleRate/deviceRate;}
 
-    void audioDeviceStopped() override {playing=false;monitoring=false;recording=false;}
+    void audioDeviceStopped() override {playing=false;monitoring=false;if(recording.exchange(false)&&captureWorker)captureWorker->interrupt();}
 
-    void audioDeviceError(const juce::String&) override {playing=false;monitoring=false;recording=false;deviceFault=true;}
+    void audioDeviceError(const juce::String&) override {playing=false;monitoring=false;if(recording.exchange(false)&&captureWorker)captureWorker->interrupt();deviceFault=true;}
 
     void audioDeviceIOCallbackWithContext(const float* const* ins,int ni,float* const* outs,int no,int frames,const juce::AudioIODeviceCallbackContext&) override {
 
@@ -469,7 +493,7 @@ private:
 
         for(int c=0;c<no;++c)if(outs[c])juce::FloatVectorOperations::clear(outs[c],frames);
 
-        auto r=commandRead.load();const auto w=commandWrite.load(std::memory_order_acquire);if(r!=w){tonescope::Parameters latest;for(unsigned n=0;r!=w&&n<32;++n,++r)latest=commands[r%commands.size()];if(!liveEngine.setParametersRealtime(latest)){monitoring=false;playing=false;deviceFault=true;}}commandRead.store(r,std::memory_order_release);
+        auto r=commandRead.load();const auto w=commandWrite.load(std::memory_order_acquire);if(r!=w){tonescope::Parameters latest;for(unsigned n=0;r!=w&&n<32;++n,++r)latest=commands[r%commands.size()];tonescope::Parameters dry;dry.inputDb=latest.inputDb;dry.toneHz=(float)juce::jmin(5000.0,.45*deviceRate.load());if(!liveEngine.setParametersRealtime(latest)||!liveDryEngine.setParametersRealtime(dry)){monitoring=false;playing=false;deviceFault=true;}}commandRead.store(r,std::memory_order_release);
 
         float peak=0;uint64_t guarded=0;
 
@@ -479,11 +503,12 @@ private:
 
                 for(int c=0;c<2;++c)for(int i=0;i<n;++i){auto v=ni>0&&ins[juce::jmin(c,ni-1)]?ins[juce::jmin(c,ni-1)][offset+i]:0.0f;inputScratch[(size_t)c][(size_t)i]=std::isfinite(v)?v:0;}
 
-                if(recording.load()){auto at=captureFrames.load();auto count=juce::jmin<int64_t>(n,(int64_t)capture.samples[0].size()-at);for(int c=0;c<2;++c)for(int64_t i=0;i<count;++i)capture.samples[(size_t)c][(size_t)(at+i)]=inputScratch[(size_t)c][(size_t)i];captureFrames.store(at+count);}
+                if(recording.load(std::memory_order_acquire)&&captureWorker){const float* data[]{inputScratch[0].data(),inputScratch[1].data()};if(!captureWorker->push(data,n))recording=false;}
 
                 const float* ip[]{inputScratch[0].data(),inputScratch[1].data()};float* op[]{outputScratch[0].data(),outputScratch[1].data()};liveEngine.process(ip,op,n);
+                float* dryOut[]{dryScratch[0].data(),dryScratch[1].data()};liveDryEngine.process(ip,dryOut,n);
 
-                for(int c=0;c<no;++c)if(outs[c])for(int i=0;i<n;++i){float v=audition.load()==1?inputScratch[(size_t)juce::jmin(c,1)][(size_t)i]:outputScratch[(size_t)juce::jmin(c,1)][(size_t)i];if(!std::isfinite(v)||std::abs(v)>0.95f)++guarded;v=std::isfinite(v)?juce::jlimit(-0.95f,0.95f,v):0;outs[c][offset+i]=v;peak=juce::jmax(peak,std::abs(v));}
+                for(int c=0;c<no;++c)if(outs[c])for(int i=0;i<n;++i){float v=audition.load()==1?dryScratch[(size_t)juce::jmin(c,1)][(size_t)i]:outputScratch[(size_t)juce::jmin(c,1)][(size_t)i];if(!std::isfinite(v)||std::abs(v)>0.95f)++guarded;v=std::isfinite(v)?juce::jlimit(-0.95f,0.95f,v):0;outs[c][offset+i]=v;peak=juce::jmax(peak,std::abs(v));}
 
             }
 
@@ -519,19 +544,28 @@ private:
 
     }
 
-    void loadAudio(const juce::File& file,juce::String expectedDigest={}){
+    void loadAudio(const juce::File& file,juce::String expectedDigest={},juce::var restoredState={}){
+        assistantSessionChanged();
 
         if(monitoring){setLive(false);live.setToggleState(false,juce::dontSendNotification);}
 
         playing=false;busy=true;const auto token=++revision;StaleJobs stale;pool.removeAllJobs(false,0,&stale);setStatus("Loading "+file.getFileName()+"...");auto safe=juce::Component::SafePointer<Main>(this);
 
-        pool.addJob(new Job([safe,file,token,expectedDigest]{
+        pool.addJob(new Job([safe,file,token,expectedDigest,restoredState]{
 
             try{if(file.getSize()>100*1024*1024)throw std::runtime_error("Development cached importer accepts files up to 100 MiB / 120 seconds.");juce::FileInputStream before(file);if(before.failedToOpen())throw std::runtime_error("Cannot hash source.");auto digest=juce::SHA256(before).toHexString();if(expectedDigest.isNotEmpty()&&expectedDigest!=digest)throw std::runtime_error("Session source content changed; import it as a new source.");auto audio=std::make_shared<tonescope::AudioData>(tonescope::readWav(file.getFullPathName().toStdString()));juce::FileInputStream after(file);if(after.failedToOpen()||juce::SHA256(after).toHexString()!=digest)throw std::runtime_error("Source changed while importing; retry from a stable file.");
 
                 if(audio->frames()<1||audio->frames()/audio->sampleRate>maxSeconds)throw std::runtime_error("Use a WAV between one frame and 120 seconds for the cached microscope.");
+                if(restoredState.isObject()){std::string error;if(!tonescope::validate(tonescope::session::loadParametersDocument(restoredState),audio->sampleRate,error))throw std::runtime_error("Session/source rate mismatch: "+error);}
 
-                juce::MessageManager::callAsync([safe,audio,file,token,digest]{if(!safe||safe->revision!=token)return;safe->source=audio;safe->sourceFile=file;safe->sourceDigest=digest;if(safe->pendingSelection){safe->scope.first=safe->pendingSelection->first;safe->scope.last=safe->pendingSelection->second;safe->pendingSelection.reset();}else{safe->scope.first=0;safe->scope.last=1;}safe->requestRender();});
+                juce::MessageManager::callAsync([safe,audio,file,token,digest,restoredState]{if(!safe||safe->revision!=token)return;safe->source=audio;safe->sourceFile=file;safe->sourceDigest=digest;safe->scope.first=0;safe->scope.last=1;
+                    if(restoredState.isObject()){
+                        safe->applyParameterTransaction(tonescope::session::loadParametersDocument(restoredState));auto ui=restoredState["ui"];safe->auditionBand=ui.hasProperty("band")?(int)ui["band"]:0;
+                        safe->scope.first=ui.hasProperty("selection_start")?(double)ui["selection_start"]:0;safe->scope.last=ui.hasProperty("selection_end")?(double)ui["selection_end"]:1;
+                        auto selected=ui["audition"].toString();bool rms=(bool)ui["rms_match"];int modeId=selected=="dry"?1:selected=="residual"?(rms?4:3):2;
+                        safe->mode.setSelectedId(modeId,juce::dontSendNotification);safe->audition=modeId;safe->match.setToggleState(rms,juce::dontSendNotification);
+                    }
+                    safe->markRecovery();safe->requestRender();});
 
             }catch(const std::exception& e){auto message=juce::String(e.what());juce::MessageManager::callAsync([safe,message,token]{if(safe&&safe->revision==token){safe->busy=false;safe->setStatus("Import failed: "+message);}});}
 
@@ -540,6 +574,7 @@ private:
     }
 
     void requestRender(){
+        assistantSessionChanged();
 
         if(!source||monitoring)return;playing=false;busy=true;const auto token=++revision;StaleJobs stale;pool.removeAllJobs(false,0,&stale);auto input=source;auto p=parameters();auto a=(int64_t)(scope.first*input->frames()),b=(int64_t)(scope.last*input->frames());b=juce::jlimit<int64_t>(a+1,input->frames(),b);bool rms=match.getToggleState()||mode.getSelectedId()==4;
 
@@ -551,11 +586,12 @@ private:
 
             auto result=std::make_shared<Rendered>();result->raw=input;result->graphKey=key;
 
-            if(previous&&previous->raw==input&&previous->graphKey==key){result->dry=previous->dry;result->wet=previous->wet;result->dryPeaks=previous->dryPeaks;result->wetPeaks=previous->wetPeaks;result->ingressClamps=previous->ingressClamps;}
+            if(previous&&previous->raw==input&&previous->graphKey==key){result->dry=previous->dry;result->wet=previous->wet;result->exportWet=previous->exportWet;result->dryPeaks=previous->dryPeaks;result->wetPeaks=previous->wetPeaks;result->ingressClamps=previous->ingressClamps;}
 
             else {
 
                 result->wet=std::make_shared<tonescope::AudioData>(tonescope::render(*input,p));
+                result->exportWet=result->wet;
 
                 auto reference=std::make_shared<tonescope::AudioData>(*input);auto trim=std::pow(10.0,p.inputDb/20.0);for(auto& channel:reference->samples)for(auto& value:channel){if(std::abs(value)>16.0f)++result->ingressClamps;value=(float)(juce::jlimit(-16.0f,16.0f,value)*trim);}result->dry=p.multiband&&p.compressor?std::make_shared<tonescope::AudioData>(tonescope::crossoverReference(*input,p)):reference;
                 if(band!=0){auto pair=tonescope::auditionPair(*result->dry,*result->wet,(tonescope::AuditionBand)band,p.crossoverLowHz,p.crossoverHighHz);result->dry=std::make_shared<tonescope::AudioData>(std::move(pair.dry));result->wet=std::make_shared<tonescope::AudioData>(std::move(pair.wet));}
@@ -564,7 +600,7 @@ private:
 
             }
 
-            tonescope::Engine descriptor;descriptor.prepare(input->sampleRate,(int)input->samples.size());descriptor.setParameters(p);result->latency=descriptor.latencySamples();
+            tonescope::Engine descriptor;descriptor.prepare(input->sampleRate,(int)input->samples.size(),p);result->latency=descriptor.latencySamples();
             const auto measuredEnd=juce::jmin<int64_t>(b,input->frames()-result->latency);
             if(a>=measuredEnd)throw std::runtime_error("Selection falls inside the unavailable latency tail. Extend the passage.");
             result->comparison=tonescope::compareAligned(*result->dry,*result->wet,a,measuredEnd,rms,result->latency);
@@ -582,13 +618,13 @@ private:
 
     }
 
-    void setSelection(double a,double b){if(!source)return;scope.first=juce::jlimit(0.0,0.999999,a);scope.last=juce::jlimit(scope.first+1.0/source->frames(),1.0,b);requestRender();}
+    void setSelection(double a,double b){assistantSessionChanged();if(!source)return;scope.first=juce::jlimit(0.0,0.999999,a);scope.last=juce::jlimit(scope.first+1.0/source->frames(),1.0,b);markRecovery();requestRender();}
 
     void setSelectionSeconds(){if(!source)return;auto seconds=source->frames()/source->sampleRate;auto a=selectionFrom.getText().getDoubleValue(),b=selectionTo.getText().getDoubleValue();if(a<0||b<=a||b>seconds){setStatus("Selection needs a start before its end, inside the source duration.");return;}setSelection(a/seconds,b/seconds);}
 
     void showDevices(){
 
-        playing=false;monitoring=false;live.setToggleState(false,juce::dontSendNotification);recording=false;
+        if(captureWorker&&!captureFinalizing){recording=false;finishCapture();}playing=false;monitoring=false;live.setToggleState(false,juce::dontSendNotification);
 
         auto* selector=new juce::AudioDeviceSelectorComponent(devices,0,2,0,2,false,false,true,false);selector->setSize(520,420);
 
@@ -599,29 +635,49 @@ private:
     }
 
     void setLive(bool enabled){
-
-        playing=false;recording=false;
-
-        if(enabled){if(deviceRate<44100||deviceRate>96000){live.setToggleState(false,juce::dontSendNotification);setStatus("Live input supports device rates from 44.1 to 96 kHz in this build. Choose a supported rate in Audio devices.");return;}auto* d=devices.getCurrentAudioDevice();if(!d||d->getActiveInputChannels().countNumberOfSetBits()==0){live.setToggleState(false,juce::dontSendNotification);showDevices();setStatus("Select an input in Audio devices, then explicitly enable monitoring. Use headphones to avoid feedback.");return;}
-
-            detach();liveEngine.setParameters(parameters());commandRead.store(commandWrite.load());capture.sampleRate=deviceRate;capture.samples.assign(2,std::vector<float>((size_t)(deviceRate*maxSeconds),0));captureFrames=0;attach();monitoring=true;setStatus("LIVE monitoring on | use headphones | output guard at -0.45 dBFS | residual audition requires captured replay.");
-
-        }else{monitoring=false;setStatus("Live monitoring off. Capture remains local and is never uploaded.");}
-
+        assistantSessionChanged();
+        playing=false;
+        if(captureWorker&&!captureFinalizing){recording=false;finishCapture();}
+        if(enabled){
+            auto* d=devices.getCurrentAudioDevice();
+            if(!d||d->getActiveInputChannels().countNumberOfSetBits()==0){live.setToggleState(false,juce::dontSendNotification);showDevices();setStatus("Select an input in Audio devices, then explicitly enable monitoring. Use headphones.");return;}
+            std::string error;if(!tonescope::validate(parameters(),deviceRate.load(),error)){live.setToggleState(false,juce::dontSendNotification);setStatus("Device rate cannot use current controls: "+juce::String(error));return;}
+            detach();commandRead.store(commandWrite.load());attach();monitoring=true;
+            setStatus("LIVE monitoring on | calibrated dry input: ingress clamp +/-16 and smoothed input trim | use headphones | guard -0.45 dBFS.");
+        }else{monitoring=false;setStatus("Live monitoring off. Captures are saved locally.");}
     }
 
     void toggleCapture(){
-
+        if(captureFinalizing)return;
+        if(captureWorker){recording=false;finishCapture();return;}
         if(!monitoring)return;
-
-        if(recording){recording=false;detach();auto n=captureFrames.load();auto take=std::make_shared<tonescope::AudioData>();take->sampleRate=capture.sampleRate;take->samples.resize(2);for(int c=0;c<2;++c)take->samples[(size_t)c].assign(capture.samples[(size_t)c].begin(),capture.samples[(size_t)c].begin()+n);attach();monitoring=false;live.setToggleState(false,juce::dontSendNotification);source=take;sourceFile={};sourceDigest={};scope.first=0;scope.last=1;captureButton.setButtonText("Capture take");if(n>0)requestRender();else setStatus("No captured samples.");
-
-        }else if(captureFrames>0){recording=true;toggleCapture();}
-
-        else{captureFrames=0;recording=true;captureButton.setButtonText("Stop & use take");setStatus("Recording dry input locally | maximum 120 seconds | stop to replay through current effects.");}
-
+        auto folder=tonescope::desktop::recoveryDirectory().getChildFile("takes");
+        if(folder.createDirectory().failed()){setStatus("Cannot create the local capture folder.");return;}
+        capturePath=folder.getChildFile(juce::Uuid().toString()+".partial.wav");
+        // Allocate the fixed 1 MiB queue before the callback sees the worker.
+        detach();captureWorker=std::make_shared<tonescope::desktop::CaptureWorker>(capturePath.getFullPathName().toStdString(),deviceRate.load());attach();
+        monitoring=true;recording=true;captureButton.setButtonText("Stop & save take");
+        setStatus("Recording dry input to local disk | bounded queue | stops and marks incomplete on overflow | 2 GiB / 2 hour maximum.");
     }
 
+    void finishCapture(){
+        if(!captureWorker||captureFinalizing)return;
+        recording=false;detach();auto worker=std::move(captureWorker);auto file=capturePath;attach();
+        monitoring=false;live.setToggleState(false,juce::dontSendNotification);captureFinalizing=true;
+        renderDue=0;const auto token=++revision;busy=true;captureButton.setButtonText("Finalizing take...");auto safe=juce::Component::SafePointer<Main>(this);
+        pool.addJob(new Job([safe,worker,file,token]{
+            worker->stop();const bool complete=worker->complete();auto saved=file;
+            if(worker->frames()>0){
+                auto target=file.getSiblingFile(file.getFileNameWithoutExtension()+(complete?".complete.wav":".incomplete.wav"));
+                if(worker->fault()!=tonescope::desktop::CaptureWorker::Fault::io&&file.moveFileTo(target))saved=target;
+                auto* metadata=new juce::DynamicObject();metadata->setProperty("schema_version",1);metadata->setProperty("complete",complete);metadata->setProperty("frames",(juce::int64)worker->frames());metadata->setProperty("fault",(int)worker->fault());metadata->setProperty("capture_tap","sanitized raw device input before ingress clamp and input trim");
+                saved.withFileExtension("capture.json").replaceWithText(juce::JSON::toString(juce::var(metadata)));
+            }
+            juce::MessageManager::callAsync([safe,saved,complete,worker,token]{if(!safe)return;safe->captureFinalizing=false;safe->captureButton.setButtonText("Capture take");if(safe->revision!=token)return;safe->busy=false;
+                if(!complete){safe->setStatus("Capture incomplete (overflow, interruption or disk fault). Preserved at "+saved.getFullPathName()+". Import explicitly to inspect the retained prefix.");return;}
+                safe->loadAudio(saved);});
+        }),true);
+    }
     juce::var session() const {
 
         auto* root=new juce::DynamicObject();root->setProperty("schema_version",1);root->setProperty("source",sourceFile.getFullPathName());if(sourceDigest.isNotEmpty())root->setProperty("source_sha256",sourceDigest);
@@ -632,7 +688,7 @@ private:
 
         juce::Array<juce::var> sequence;for(auto v:parameters().order)sequence.add(v);values->setProperty("order",sequence);root->setProperty("parameters",juce::var(values));
 
-        auto* ui=new juce::DynamicObject();ui->setProperty("selection_start",scope.first);ui->setProperty("selection_end",scope.last);ui->setProperty("audition",mode.getSelectedId()==1?"dry":mode.getSelectedId()==2?"wet":"residual");ui->setProperty("rms_match",match.getToggleState()||mode.getSelectedId()==4);root->setProperty("ui",juce::var(ui));return root;
+        auto* ui=new juce::DynamicObject();ui->setProperty("band",auditionBand);ui->setProperty("selection_start",scope.first);ui->setProperty("selection_end",scope.last);ui->setProperty("audition",mode.getSelectedId()==1?"dry":mode.getSelectedId()==2?"wet":"residual");ui->setProperty("rms_match",match.getToggleState()||mode.getSelectedId()==4);root->setProperty("ui",juce::var(ui));return root;
 
     }
 
@@ -640,51 +696,54 @@ private:
 
         if(!source){setStatus("Import or capture audio before saving a session.");return;}
 
-        if(!sourceFile.existsAsFile()){setStatus("This build saves file-backed sessions only. The captured take can be replayed and exported as a processed WAV.");return;}
+        if(!sourceFile.existsAsFile()){setStatus("Demo sources are temporary. Import a WAV or record a persistent dry take before saving.");return;}
 
         chooser=std::make_unique<juce::FileChooser>("Save ToneScope session",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("tone.tonescope.json"),"*.json");auto safe=juce::Component::SafePointer<Main>(this);auto json=juce::JSON::toString(session());
 
-        chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe,json](const juce::FileChooser& f){if(!safe||f.getResult()==juce::File{})return;juce::TemporaryFile temp(f.getResult());if(!temp.getFile().replaceWithText(json)||!temp.overwriteTargetFileWithTemporary())safe->setStatus("Session save failed. Check folder permissions and free space.");else safe->setStatus("Session saved atomically to "+f.getResult().getFileName());});
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe,json](const juce::FileChooser& f){if(!safe||f.getResult()==juce::File{})return;auto file=f.getResult();safe->pool.addJob(new Job([safe,json,file]{auto ok=tonescope::desktop::saveSessionAtomically(file,json);juce::MessageManager::callAsync([safe,ok,file]{if(safe)safe->setStatus(ok?"Session saved atomically to "+file.getFileName():"Session save failed. Previous session preserved.");});}),true);});
 
     }
 
     void openSession(){
-
         chooser=std::make_unique<juce::FileChooser>("Open ToneScope session",juce::File{},"*.json");auto safe=juce::Component::SafePointer<Main>(this);
-
-        chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe](const juce::FileChooser& f){if(!safe||!f.getResult().existsAsFile())return;auto file=f.getResult();if(file.getSize()>5*1024*1024){safe->setStatus("Session is larger than the 5 MiB limit.");return;}try{tonescope::session::loadParameters(file);}catch(const std::exception& error){safe->setStatus("Invalid session: "+juce::String(error.what()));return;}auto state=juce::JSON::parse(file);auto* obj=state.getDynamicObject();if(!obj||!obj->getProperty("schema_version").isInt()||(int)obj->getProperty("schema_version")!=1){safe->setStatus("Session format is invalid or unsupported.");return;}
-
-            auto* values=obj->getProperty("parameters").getDynamicObject();auto* ui=obj->getProperty("ui").getDynamicObject();if(!values){safe->setStatus("Session parameters must be an object.");return;}
-
-            auto p=tonescope::session::loadParameters(file);for(auto& control:safe->controls){auto value=values->getProperty(control->key);if(value.isVoid())continue;if(!(value.isDouble()||value.isInt()||value.isInt64())){safe->setStatus("Session controls must be numeric.");return;}auto v=(double)value;if(!std::isfinite(v)||v<control->slider.getMinimum()||v>control->slider.getMaximum()){safe->setStatus("Session contains an out-of-range control.");return;}p.*(control->member)=(float)v;}
-
-            for(auto key:{"compressor","equalizer","drive"}){auto value=values->getProperty(key);if(!value.isVoid()&&!value.isBool()){safe->setStatus("Stage enable flags must be boolean.");return;}}
-
-            p.compressor=(bool)values->getProperty("compressor");p.equalizer=(bool)values->getProperty("equalizer");p.drive=(bool)values->getProperty("drive");
-
-            if(auto sequence=values->getProperty("order");!sequence.isVoid()){auto* orderValues=sequence.getArray();if(!orderValues||orderValues->size()!=3){safe->setStatus("Stage order must contain three IDs.");return;}for(int i=0;i<3;++i){if(!(*orderValues)[i].isInt()){safe->setStatus("Stage IDs must be integers.");return;}p.order[(size_t)i]=(int)(*orderValues)[i];}}
-
-            std::string error;if(!tonescope::validate(p,48000,error)){safe->setStatus("Invalid session: "+juce::String(error));return;}
-
-            double a=ui&&ui->hasProperty("selection_start")?(double)ui->getProperty("selection_start"):0,b=ui&&ui->hasProperty("selection_end")?(double)ui->getProperty("selection_end"):1;auto selected=ui&&ui->hasProperty("audition")?ui->getProperty("audition").toString():juce::String("wet");bool rms=ui&&ui->hasProperty("rms_match")&&(bool)ui->getProperty("rms_match");
-
-            if(!std::isfinite(a)||!std::isfinite(b)||a<0||b>1||b<=a||(selected!="dry"&&selected!="wet"&&selected!="residual")){safe->setStatus("Session selection or audition is invalid.");return;}
-
-            juce::File sourcePath(obj->getProperty("source").toString());if(!sourcePath.existsAsFile()){safe->setStatus("Session source is missing: "+sourcePath.getFullPathName()+". Import its replacement WAV manually.");return;}
-
-            for(auto& control:safe->controls)control->slider.setValue(p.*(control->member),juce::dontSendNotification);
-
-            safe->oversampling=p.oversampling;safe->multiband=p.multiband;safe->stages[0].setToggleState(p.compressor,juce::dontSendNotification);safe->stages[1].setToggleState(p.equalizer,juce::dontSendNotification);safe->stages[2].setToggleState(p.drive,juce::dontSendNotification);
-
-            constexpr std::array<std::array<int,3>,6> orders{{{0,1,2},{2,1,0},{1,0,2},{0,2,1},{1,2,0},{2,0,1}}};for(size_t i=0;i<orders.size();++i)if(orders[i]==p.order)safe->order.setSelectedId((int)i+1,juce::dontSendNotification);
-
-            int modeId=selected=="dry"?1:selected=="wet"?2:rms?4:3;safe->mode.setSelectedId(modeId,juce::dontSendNotification);safe->audition=modeId;safe->match.setToggleState(rms,juce::dontSendNotification);safe->pendingSelection=std::make_pair(a,b);safe->loadAudio(sourcePath,obj->getProperty("source_sha256").toString());
-
-        });
-
+        chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe](const juce::FileChooser& f){if(safe&&f.getResult().existsAsFile())safe->loadSessionFile(f.getResult());});
     }
 
-    std::optional<std::pair<double,double>> pendingSelection;
+    void loadSessionFile(const juce::File& file){
+        try{
+            auto p=tonescope::session::loadParameters(file);std::string error;
+            if(!tonescope::validate(p,48000,error))throw std::runtime_error(error);
+            auto state=tonescope::session::migrateDocument(juce::JSON::parse(file));
+            auto path=state["source"].toString();auto sourcePath=juce::File::isAbsolutePath(path)?juce::File(path):file.getParentDirectory().getChildFile(path);
+            if(sourcePath.existsAsFile()){loadAudio(sourcePath,state["source_sha256"].toString(),state);return;}
+            setStatus("Session source missing. Locate the original WAV; its saved SHA256 must match.");
+            chooser=std::make_unique<juce::FileChooser>("Locate missing session source (SHA256 verified)",file.getParentDirectory(),"*.wav");auto safe=juce::Component::SafePointer<Main>(this);
+            chooser->launchAsync(juce::FileBrowserComponent::openMode|juce::FileBrowserComponent::canSelectFiles,[safe,state](const juce::FileChooser& f){if(!safe||!f.getResult().existsAsFile())return;if(state["source_sha256"].toString().isEmpty()){safe->setStatus("Legacy session has no source digest. Import the replacement as a new source; saved correspondence cannot be verified.");return;}safe->loadAudio(f.getResult(),state["source_sha256"].toString(),state);});
+        }catch(const std::exception& error){setStatus("Invalid session: "+juce::String(error.what()));}
+    }
+
+    void markRecovery(){recoveryDirty=true;recoveryDue=juce::Time::currentTimeMillis()+800;}
+    void restoreRecovery(){
+        auto folder=tonescope::desktop::recoveryDirectory();auto file=folder.getChildFile("session.json");
+        auto partials=folder.getChildFile("takes").findChildFiles(juce::File::findFiles,false,"*.partial.wav");
+        if(partials.isEmpty()){if(file.existsAsFile())loadSessionFile(file);else setStatus("No recovery session or interrupted capture is available.");return;}
+        auto partial=partials.getFirst();for(const auto& candidate:partials)if(candidate.getLastModificationTime()>partial.getLastModificationTime())partial=candidate;if(file.existsAsFile()&&file.getLastModificationTime()>=partial.getLastModificationTime()){loadSessionFile(file);return;}auto safe=juce::Component::SafePointer<Main>(this);
+        pool.addJob(new Job([safe,partial]{try{auto recovered=tonescope::desktop::recoverInterruptedCapture(partial);juce::MessageManager::callAsync([safe,recovered]{if(safe)safe->loadAudio(recovered);});}catch(const std::exception& e){auto message=juce::String(e.what());juce::MessageManager::callAsync([safe,message]{if(safe)safe->setStatus("Capture recovery failed: "+message);});}}),true);
+    }
+
+    void writeParameterControls(const tonescope::Parameters& p){
+        for(auto& c:controls)c->slider.setValue(p.*(c->member),juce::dontSendNotification);
+        oversampling=p.oversampling;multiband=p.multiband;stages[0].setToggleState(p.compressor,juce::dontSendNotification);stages[1].setToggleState(p.equalizer,juce::dontSendNotification);stages[2].setToggleState(p.drive,juce::dontSendNotification);
+        constexpr std::array<std::array<int,3>,6> orders{{{0,1,2},{2,1,0},{1,0,2},{0,2,1},{1,2,0},{2,0,1}}};for(size_t i=0;i<orders.size();++i)if(orders[i]==p.order)order.setSelectedId((int)i+1,juce::dontSendNotification);
+    }
+    bool applyParameterTransaction(const tonescope::Parameters& p){
+        std::string error;if(!tonescope::validate(p,source?source->sampleRate:deviceRate.load(),error)){setStatus("Parameter patch rejected: "+juce::String(error));return false;}
+        const auto before=parameters();bool topology=before.order!=p.order||before.compressor!=p.compressor||before.equalizer!=p.equalizer||before.drive!=p.drive||before.oversampling!=p.oversampling||before.multiband!=p.multiband||before.crossoverLowHz!=p.crossoverLowHz||before.crossoverHighHz!=p.crossoverHighHz;
+        writeParameterControls(p);parametersChanged(topology);return true;
+    }
+    void undoParameters(){tonescope::Parameters p;if(history.undo(p)){restoringParameters=true;applyParameterTransaction(p);restoringParameters=false;setStatus("Undid parameter transaction.");}else setStatus("No parameter change to undo.");}
+    void redoParameters(){tonescope::Parameters p;if(history.redo(p)){restoringParameters=true;applyParameterTransaction(p);restoringParameters=false;setStatus("Redid parameter transaction.");}else setStatus("No parameter change to redo.");}
+
 
     void exportAudio(){
 
@@ -694,10 +753,11 @@ private:
 
         chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe,audio,state](const juce::FileChooser& f){if(!safe||f.getResult()==juce::File{})return;auto file=f.getResult();auto evidencePath=file.withFileExtension("evidence.json");if(evidencePath.exists()||evidencePath==safe->sourceFile){safe->setStatus("Evidence sidecar exists. Choose a new export name to preserve it.");return;}if(file==safe->sourceFile){safe->setStatus("Choose an export path different from the dry source.");return;}safe->setStatus("Exporting processed audio and comparison evidence...");safe->pool.addJob(new Job([safe,audio,state,file]{try{
 
-                juce::TemporaryFile temp(file);tonescope::writeWav(temp.getFile().getFullPathName().toStdString(),*audio->wet);if(!temp.overwriteTargetFileWithTemporary())throw std::runtime_error("Could not replace output WAV.");
+                juce::TemporaryFile temp(file);tonescope::writeWav(temp.getFile().getFullPathName().toStdString(),*audio->exportWet);if(!temp.overwriteTargetFileWithTemporary())throw std::runtime_error("Could not replace output WAV.");
 
-                auto* evidence=new juce::DynamicObject();evidence->setProperty("schema_version",1);evidence->setProperty("session",state);evidence->setProperty("source_rate_hz",audio->dry->sampleRate);evidence->setProperty("frames",(juce::int64)audio->dry->frames());evidence->setProperty("latency_samples",audio->latency);evidence->setProperty("rms_valid",audio->comparison.valid);evidence->setProperty("dry_rms",audio->comparison.dryRms);evidence->setProperty("wet_rms",audio->comparison.wetRms);evidence->setProperty("frozen_match_gain",audio->comparison.gain);evidence->setProperty("residual_rms",audio->comparison.residualRms);evidence->setProperty("export_semantics","Full-source raw processed signal; monitor RMS match, boundary fades and safety guard are excluded.");
+                auto* evidence=new juce::DynamicObject();evidence->setProperty("schema_version",1);evidence->setProperty("session",state);evidence->setProperty("source_rate_hz",audio->dry->sampleRate);evidence->setProperty("frames",(juce::int64)audio->dry->frames());evidence->setProperty("latency_samples",audio->latency);evidence->setProperty("rms_valid",audio->comparison.valid);evidence->setProperty("dry_rms",audio->comparison.dryRms);evidence->setProperty("wet_rms",audio->comparison.wetRms);evidence->setProperty("frozen_match_gain",audio->comparison.gain);evidence->setProperty("residual_rms",audio->comparison.residualRms);evidence->setProperty("export_semantics","Full-source float32 engine-output timeline; audition band filters, monitor RMS match, boundary fades and safety guard are excluded.");
 
+                evidence->setProperty("comparison_band",state["ui"]["band"]);evidence->setProperty("comparison_alignment_samples",audio->latency);evidence->setProperty("comparison_filters","Identical branch audition filters at saved crossover frequencies; excluded from exported audio.");
                 if(!file.withFileExtension("evidence.json").replaceWithText(juce::JSON::toString(juce::var(evidence))))throw std::runtime_error("WAV saved but evidence sidecar failed.");
 
                 juce::MessageManager::callAsync([safe,file]{if(safe)safe->setStatus("Exported "+file.getFileName()+" and evidence JSON. Full source, raw processed gain.");});
@@ -706,6 +766,14 @@ private:
 
     }
 
+#if __has_include("AssistantIntegration.inc")
+    #include "AssistantIntegration.inc"
+#else
+    void initialiseAssistant(){}
+    void shutdownAssistant(){}
+    void updateAssistant(){}
+    void assistantSessionChanged(){}
+#endif
 };
 
 class Application final : public juce::JUCEApplication {
@@ -720,7 +788,11 @@ public:
 
     void initialise(const juce::String& commandLine) override {
 
-        auto args=juce::StringArray::fromTokens(commandLine,true);args.removeEmptyStrings();window=std::make_unique<Window>(!args.contains("--screenshot"));
+        auto args=juce::StringArray::fromTokens(commandLine,true);args.removeEmptyStrings();
+#if JUCE_WINDOWS
+        if(args.contains("--web-ui-test")){auto debug=args.indexOf("--web-debug-port");if(debug>=0&&debug+1<args.size()&&args[debug+1].containsOnly("0123456789")){int port=args[debug+1].getIntValue();if(port>=1024&&port<=65535){auto flags="--remote-debugging-address=127.0.0.1 --remote-debugging-port="+juce::String(port);_putenv_s("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",flags.toRawUTF8());}}}
+#endif
+        window=std::make_unique<Window>(!args.contains("--screenshot")&&!args.contains("--web-ui-test"));
 
         if(args.contains("--demo"))static_cast<Main*>(window->getContentComponent())->loadSyntheticDemo();
 

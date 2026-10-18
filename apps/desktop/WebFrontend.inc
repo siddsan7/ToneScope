@@ -9,6 +9,7 @@
         put("source",sourceFile.existsAsFile()?sourceFile.getFileName():(source?"Captured / demo take":""));
         put("duration",source?source->frames()/source->sampleRate:0);put("sampleRate",source?source->sampleRate:deviceRate.load());put("channels",source?(int)source->samples.size():0);
         put("status",status.getText());put("metrics",metrics.getText());put("playing",playing.load());put("monitoring",monitoring.load());put("recording",recording.load());put("looping",looping.load());put("matching",match.getToggleState());put("busy",busy);put("ready",rendered&&renderedRevision==revision&&!busy);put("mode",mode.getSelectedId());put("order",order.getSelectedId());
+        put("canUndo",history.canUndo());put("canRedo",history.canRedo());put("captureFinalizing",captureFinalizing);put("dryReference","ingress-clamped and smoothed input trim; recorded dry source precedes trim");
         put("position",rendered?position.load()/juce::jmax<int64_t>(1,rendered->dry->frames()):0);
         juce::Array<juce::var> selection;selection.add(scope.first);selection.add(scope.last);put("selection",selection);
         juce::Array<juce::var> stageValues;for(auto& stage:stages)stageValues.add(stage.getToggleState());put("stages",stageValues);
@@ -25,11 +26,12 @@
     }
     void webCommand(const juce::Array<juce::var>& arguments,juce::WebBrowserComponent::NativeFunctionCompletion complete){
         if(arguments.size()!=1||!arguments[0].isObject()){setStatus("Invalid frontend command.");complete(webSnapshot());return;}
-        auto& input=arguments[0];auto action=input["action"].toString();
+        const auto input=arguments[0];auto action=input["action"].toString();
         if(!input["version"].isInt()||(int)input["version"]!=1){setStatus("Unsupported frontend protocol version.");complete(webSnapshot());return;}
         auto number=[&](const char* key){auto value=input[key];return (value.isInt()||value.isInt64()||value.isDouble())&&std::isfinite((double)value);};
         auto toggle=[&](juce::ToggleButton& button){if(input["value"].isBool())button.setToggleState((bool)input["value"],juce::sendNotificationSync);else setStatus("Expected a boolean control value.");};
         if(action=="snapshot"){}
+        else if(action=="undo")undoParameters();else if(action=="redo")redoParameters();else if(action=="recover")restoreRecovery();
         else if(action=="assistant.ask"||action=="assistant.cancel"||action=="assistant.status"||action=="assistant.preview"||action=="assistant.apply"||action=="assistant.dismiss"||action=="assistant.history.delete"){if(assistantCommand)assistantCommand(action,input);else setStatus("Assistant service unavailable. No request was sent.");}
         else if(action=="import")chooseImport();else if(action=="open")openSession();else if(action=="save")saveSession();else if(action=="export")exportAudio();else if(action=="devices")showDevices();else if(action=="play")togglePlay();else if(action=="pause")playing=false;else if(action=="rewind"){playing=false;position=selectionStart.load();}
         else if(action=="quality"&&input["value"].isInt()&&((int)input["value"]==1||(int)input["value"]==2||(int)input["value"]==4)){oversampling=(int)input["value"];parametersChanged(true);}
