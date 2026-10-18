@@ -382,7 +382,10 @@
     {
       "number": 4,
       "scope": "Embedded frontend, durable native state, optional assistant and package integration",
-      "state": "draft"
+      "state": "merged",
+      "reviewed_head": "99858518b64d68692f25ce1165db2b017ab5747c",
+      "merge_commit": "9e07e175e705306500376138f4b28d84971142ff",
+      "review_evidence": "https://github.com/siddsan7/ToneScope/pull/4#issuecomment-6245835494"
     }
   ]
 }

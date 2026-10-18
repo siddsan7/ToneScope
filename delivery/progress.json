@@ -9,12 +9,15 @@
     "merged_private_prs": [
       1,
       2,
-      3
+      3,
+      4
     ],
     "public_release": false,
     "integration_pr": 4,
-    "integration_pr_status": "Authoritative live review/check/merge state: https://github.com/siddsan7/ToneScope/pull/4",
-    "final_evidence_directory": "artifacts/final/"
+    "integration_pr_status": "Merged after independent agent review and both passing exact-head CI runs",
+    "final_evidence_directory": "artifacts/final/",
+    "delivered_code_commit": "99858518b64d68692f25ce1165db2b017ab5747c",
+    "integration_merge_commit": "9e07e175e705306500376138f4b28d84971142ff"
   },
   "requirements": {
     "TS-001": {
@@ -192,26 +195,23 @@
     }
   },
   "verification": {
-    "scope": "Implemented software; exact clean-build identities and final results belong in artifacts/final/ and exact-head GitHub checks. Prior local runs below are explicitly intermediate.",
+    "scope": "Final clean PR4 implementation head9985851; compiled identity and artifacts/final/summary.json bind actual software checks/binaries. This closeout changes documentation only.",
     "native_ctest_last_pass": {
       "pass": 7,
       "fail": 0,
-      "log": ".tools/final-ctest-initial.log",
-      "scope": "Intermediate integrated native executables; final clean-head rerun recorded separately"
+      "log": ".tools/clean-head-ctest.log"
     },
     "python_last_pass": {
       "pass": 34,
       "fail": 0,
       "skipped": 0,
-      "log": ".tools/final-python-initial.log",
-      "scope": "Intermediate integrated checkout; final clean-head rerun recorded separately"
+      "log": ".tools/clean-head-python.log"
     },
     "assistant_last_pass": {
       "pass": 24,
       "fail": 0,
       "skipped": 0,
-      "log": "artifacts/integration-review/final-9c419bb-approval.md",
-      "scope": "Independent agent actual-CLI rerun"
+      "log": ".tools/final-service.log"
     },
     "frontend_last_pass": {
       "pass": 5,
@@ -224,7 +224,7 @@
     },
     "embedded_native_probe": "artifacts/frontend-native/probe.json",
     "accessibility_software": "artifacts/frontend-native/accessibility-software.json",
-    "portable_sanitizers_ci": "PR4 exact-head portable-sanitizers check; current status on GitHub",
+    "portable_sanitizers_ci": "Passed at9985851 in PR and push workflows",
     "long_file_embedded_probe": ".worktrees/native-state/artifacts/frontend-native-long-file/probe.json",
     "callback_probe": "docs/transport/callback-probe-benchmark.json (host microbenchmark only)",
     "product_mutations": {
@@ -232,11 +232,22 @@
       "session_version": "artifacts/final/schema-mutation/run.json",
       "tool_validation": "artifacts/final/tool-mutation-current/result.json",
       "scope": "Actual isolated product-source mutants; baseline passes and deliberate guards fail; no hardware/live-model claim"
+    },
+    "exact_head_ci": [
+      "https://github.com/siddsan7/ToneScope/actions/runs/39097973449",
+      "https://github.com/siddsan7/ToneScope/actions/runs/39097969893"
+    ],
+    "private_package": {
+      "path": "artifacts/final/ToneScope-0.1.0-dev-9985851-win64.zip",
+      "sha256": "e6c49eab0974445474e3ec85a3f088c7b2bf89649c662c31c25aa7f0bf79d6c6",
+      "manifest_files": 25,
+      "installer_checks": 33,
+      "actual_packaged_embedded_workflow": "pass; development-service discovery disabled"
     }
   },
   "external_blockers": [
     "Physical interface/laptop lifecycle, timing and soak qualification",
-    "Licensed DI guitar corpus and listening/accessibility participants",
+    "Independently owned sequestered holdout and human listening/accessibility participants",
     "JUCE distribution licensing route and notices review",
     "Code-signing identity and clean-machine install qualification",
     "Optional provider credentials, consent and budget for live D3 evaluation"
