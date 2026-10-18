@@ -68,4 +68,42 @@ struct DynamicsFrame {
 };
 // Linked stereo energy, 10 ms one-pole RMS detector; finite data required.
 std::vector<DynamicsFrame> dynamics(const AudioData&, int hop = 512);
+struct ProcessingDynamicsFrame {
+    DynamicsFrame dry, wet; // source-end sample; wet measured at sample + latency
+    bool wetAvailable = false; // final hop can lack delayed output
+    float gainReductionDb = 0; // actual compressor state at this sample
+    std::array<float, 3> bandGainReductionDb{}; // zero outside multiband mode
+};
+struct DynamicsRender {
+    AudioData dry, wet; // dry = finite ingress clamp + input trim; wet = render()
+    int wetLatencySamples = 0;
+    std::vector<ProcessingDynamicsFrame> frames;
+};
+// Offline complete-history render. End-of-hop snapshots are actual DSP state;
+// no limiter or RMS matching is applied. Throws on invalid input/parameters.
+DynamicsRender renderWithDynamics(const AudioData&, const Parameters&, int hop = 512, int blockSize = 257);
+struct SampleInterval { std::int64_t start = 0, end = 0; }; // [start,end), source time
+struct PassageSignalMetrics {
+    double rms = 0, samplePeak = 0, crestDb = 0, envelopePeak = 0;
+    bool crestAvailable = false, riseAvailable = false, decayAvailable = false;
+    double riseMs = 0, decayMs = 0; // full-history 10 ms RMS envelope crossings
+};
+struct PassageMetrics {
+    PassageSignalMetrics dry, wet;
+    bool rmsChangeAvailable = false;
+    double rmsChangeDb = 0; // 20 log10(wet RMS / dry RMS), no level matching
+};
+struct PassageComparison {
+    bool valid = false;
+    PassageMetrics soft, hard; // explicit manual labels, never inferred notes
+    bool contrastAvailable = false;
+    double dryContrastDb = 0, wetContrastDb = 0, contrastChangeDb = 0;
+};
+// Both manual selections must have >=2 available aligned samples. Nonfinite
+// data, shape/rate mismatch or invalid selections return valid=false.
+// Level ratios and crest are unavailable below 1e-9 RMS; absent 10/90 percent
+// crossings are unavailable. No perceptual loudness/onset claims are implied.
+PassageComparison comparePassages(const AudioData& dry, const AudioData& wet,
+    SampleInterval soft, SampleInterval hard, int wetLatencySamples = 0);
+
 }

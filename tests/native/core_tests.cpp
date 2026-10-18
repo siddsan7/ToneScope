@@ -22,6 +22,58 @@ namespace {void require(bool ok,const char* text){if(!ok)throw std::runtime_erro
 void put(std::ofstream& f,unsigned value,int bytes){for(int i=0;i<bytes;++i)f.put(char(value>>(8*i)));}
 void fixture(const std::filesystem::path& path,int format,int bits){std::ofstream f(path,std::ios::binary);int count=bits/8;int data=count*2;f.write("RIFF",4);put(f,36+data,4);f.write("WAVEfmt ",8);put(f,16,4);put(f,format,2);put(f,1,2);put(f,48000,4);put(f,48000*count,4);put(f,count,2);put(f,bits,2);f.write("data",4);put(f,data,4);put(f,0, count);unsigned v=bits==16?0xc000:bits==24?0xc00000:0xc0000000;put(f,v,count);}
 }
+void passageDynamicsTests() {
+ auto source=sine(2049,997,.4f);Parameters p;p.compressor=p.equalizer=p.drive=true;p.thresholdDb=-30;p.ratio=4;p.lowDb=3;
+ for(int factor:{1,2,4})for(bool bands:{false,true}) {
+  p.oversampling=factor;p.multiband=bands;
+  const auto measured=renderWithDynamics(source,p,128,17);
+  require(measured.wet.samples==render(source,p,257).samples,"timeline audio exactly equals ordinary render");
+  require(measured.wetLatencySamples==(factor==1?0:32),"timeline declares engine latency");
+  Engine engine;engine.prepare(source.sampleRate,2,p);
+  for(std::int64_t n=0;n<source.frames();++n) {
+   float l=0,r=0;const float* in[]={&source.samples[0][n],&source.samples[1][n]};float* out[]={&l,&r};engine.process(in,out,1);
+   if((n+1)%128==0||n+1==source.frames()) {
+    const auto& frame=measured.frames[static_cast<size_t>(n/128)];
+    require(frame.dry.sample==n&&frame.wet.sample==n,"timeline sample positions remain in source time");
+    require(frame.gainReductionDb==engine.gainReductionDb()&&frame.bandGainReductionDb==engine.bandGainReductionDb(),"timeline gain reduction is actual DSP state");
+    require(frame.wetAvailable==(n+measured.wetLatencySamples<source.frames()),"delayed output tail availability explicit");
+   }
+  }
+  if(factor>1) {
+   double energy=0,peak=0;for(int n=32;n<160;++n)for(const auto& ch:measured.wet.samples){energy+=double(ch[n])*ch[n]/2;peak=std::max(peak,std::abs(double(ch[n])));}
+   require(near(measured.frames[0].wet.rms,std::sqrt(energy/128),1e-14)&&measured.frames[0].wet.samplePeak==peak,"wet frame measures delayed output at aligned source interval");
+  }
+ }
+ p={};p.inputDb=6;p.outputDb=-12;source.samples[0][0]=20;
+ const auto trimmed=renderWithDynamics(source,p,17);
+ require(trimmed.dry.samples[0][0]==static_cast<float>(16*std::pow(10.,6./20)),"timeline dry uses clamp before trim");
+ require(trimmed.frames[0].gainReductionDb==0&&trimmed.wet.samples!=trimmed.dry.samples,"output attenuation never masquerades as gain reduction");
+ AudioData levels;levels.samples.assign(2,std::vector<float>(9600,.125f));
+ for(auto& ch:levels.samples)std::fill(ch.begin()+4800,ch.end(),.5f);
+ auto wet=levels;for(auto& ch:wet.samples)for(int n=4800;n<9600;++n)ch[n]*=.5f;
+ const auto contrast=comparePassages(levels,wet,{0,4800},{4800,9600});
+ require(contrast.valid&&contrast.contrastAvailable,"manual soft/hard comparison valid");
+ require(contrast.soft.dry.rms==.125&&contrast.hard.dry.rms==.5&&contrast.hard.wet.rms==.25,"manual passage RMS exact known levels");
+ require(contrast.hard.dry.crestAvailable&&contrast.hard.dry.crestDb==0,"constant signal zero crest factor");
+ require(near(contrast.dryContrastDb,20*std::log10(4.),1e-12)&&near(contrast.contrastChangeDb,-20*std::log10(2.),1e-12),"measured hard soft contrast change in dB");
+ AudioData step;step.samples.assign(1,std::vector<float>(14400,0));std::fill(step.samples[0].begin()+2400,step.samples[0].begin()+7200,.5f);
+ const auto timing=comparePassages(step,step,{0,14400},{3000,7000});
+ require(timing.valid&&timing.soft.dry.riseAvailable&&timing.soft.dry.decayAvailable,"bounded step exposes rise and decay");
+ require(near(timing.soft.dry.riseMs,10*std::log(.99/.19),.03),"10 to 90 percent RMS step rise matches analytic detector law");
+ require(near(timing.soft.dry.decayMs,20*std::log(9.),.03),"90 to 10 percent RMS decay matches analytic detector law");
+ require(!timing.hard.dry.riseAvailable&&!timing.hard.dry.decayAvailable,"selection preserves prior envelope history");
+ auto ramp=step;for(size_t n=0;n<ramp.samples[0].size();++n)ramp.samples[0][n]=static_cast<float>(n/double(ramp.frames()));
+ const auto rampMetrics=comparePassages(ramp,ramp,{0,ramp.frames()},{0,ramp.frames()});
+ require(rampMetrics.soft.dry.riseAvailable&&!rampMetrics.soft.dry.decayAvailable&&rampMetrics.soft.dry.riseMs>100,"ramp descriptive rise has no invented decay");
+ auto silent=step;std::fill(silent.samples[0].begin(),silent.samples[0].end(),0);
+ const auto silence=comparePassages(silent,silent,{0,100},{100,200});
+ require(silence.valid&&!silence.contrastAvailable&&!silence.soft.rmsChangeAvailable&&!silence.soft.dry.crestAvailable&&!silence.soft.dry.riseAvailable,"silence has explicit unavailable ratios/timing");
+ require(!comparePassages(step,step,{-1,100},{0,100}).valid&&!comparePassages(step,step,{0,1},{0,100}).valid&&!comparePassages(step,step,{0,100},{0,step.frames()},32).valid,"invalid or unavailable aligned selections rejected");
+ bool rejected=false;try{renderWithDynamics(step,{},0);}catch(const std::invalid_argument&){rejected=true;}require(rejected,"timeline rejects zero hop");
+ step.samples[0][0]=std::numeric_limits<float>::quiet_NaN();
+ require(!comparePassages(step,step,{0,100},{100,200}).valid,"nonfinite passage rejected");
+ rejected=false;try{renderWithDynamics(step,{});}catch(const std::invalid_argument&){rejected=true;}require(rejected,"timeline finite input matches render policy");
+}
 void faustStageTests() {
  // Independent scalar compressor definition, including soft-knee boundaries,
  // detector decay, attack/release switching and ratio-one identity.
@@ -159,6 +211,7 @@ int main(){try {
 
  AudioData lowRate;lowRate.sampleRate=8000;lowRate.samples={{.125f,.25f,-.5f}};Parameters lowParams;lowParams.toneHz=3200;require(render(lowRate,lowParams).samples==lowRate.samples,"explicit valid low-rate configuration prepares without default-frequency rejection");
 
+ passageDynamicsTests();
  faustStageTests();
  microscopeTests();
  Parameters p;std::string error;require(validate(p,48000,error),"defaults valid");p.ratio=std::numeric_limits<float>::quiet_NaN();require(!validate(p,48000,error),"NaN rejected");p={};p.order={0,0,2};require(!validate(p,48000,error),"duplicate stage rejected");p={};p.midHz=20000;require(!validate(p,44100,error),"Nyquist parameter rejected");
