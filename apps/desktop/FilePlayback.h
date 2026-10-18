@@ -25,14 +25,21 @@ inline Parameters dryReferenceParameters(const Parameters& p,double rate) {
 }
 struct CancelledFileOperation:std::runtime_error {CancelledFileOperation():std::runtime_error("File operation cancelled") {}};
 using FileCancel=std::shared_ptr<std::atomic<bool>>;
+// Linked 10 ms mean-squared envelope state immediately before `sample` on
+// the raw DSP timeline. The branches include their actual audition filters.
+struct EnvelopeCheckpoint {
+    std::int64_t sample=0;double dryEnergy=0,wetEnergy=0;bool captured=false;
+};
 // All processing and allocation below runs on file workers. Always reconstruct
 // state from source frame zero; no approximate pre-roll is used for seeking.
 template<class Sink>
 inline WavInfo processFileRange(const std::string& path,const Parameters& p,std::int64_t from,std::int64_t until,
-                               const FileCancel& cancel,std::atomic<double>* progress,Sink&& sink,AuditionBand band=AuditionBand::full,std::function<void(std::int64_t,float,std::array<float,3>)> dynamicsTap={}) {
+                               const FileCancel& cancel,std::atomic<double>* progress,Sink&& sink,AuditionBand band=AuditionBand::full,std::function<void(std::int64_t,float,std::array<float,3>)> dynamicsTap={},EnvelopeCheckpoint* checkpoint=nullptr) {
     WavStreamReader reader(path);const auto info=reader.info();
     if(static_cast<int>(band)<0||static_cast<int>(band)>3)throw std::runtime_error("Invalid streamed audition band");
     if(from<0||until<=from||until>info.frames)throw std::runtime_error("Invalid streamed source interval");
+    if(checkpoint){if(checkpoint->sample<0||checkpoint->sample>=until)throw std::runtime_error("Envelope checkpoint outside processed interval");checkpoint->dryEnergy=checkpoint->wetEnergy=0;checkpoint->captured=false;}
+    const double envelopeCoefficient=checkpoint?std::exp(-1/(.010*info.sampleRate)):0.;double dryEnvelope=0,wetEnvelope=0;
 #if __has_include("../../libs/audio-engine/src/NativePath.h")
     const auto diskPath=detail::nativeAudioPath(path);
 #else
@@ -51,12 +58,19 @@ inline WavInfo processFileRange(const std::string& path,const Parameters& p,std:
         if(reader.read(incoming,count)!=count)throw std::runtime_error("Stream ended before the requested source interval");
         wet.process(in,wout,count);dry.process(in,dout,count);if(dynamicsTap)dynamicsTap(at+count-1,wet.gainReductionDb(),wet.bandGainReductionDb());
         for(int c=0;c<info.channels;++c)for(int i=0;i<count;++i){const auto channel=static_cast<size_t>(c),index=static_cast<size_t>(i);if(band==AuditionBand::full){filteredDry[channel][index]=dryOutput[channel][index];filteredWet[channel][index]=wetOutput[channel][index];}else{filteredDry[channel][index]=static_cast<float>(dryFilters[c].tick(dryOutput[channel][index])[static_cast<size_t>(band)-1]);filteredWet[channel][index]=static_cast<float>(wetFilters[c].tick(wetOutput[channel][index])[static_cast<size_t>(band)-1]);}}
+        // Observe the prefix before the range sink skips it. Stop this extra
+        // energy loop after the checkpoint; playback/export never request it.
+        if(checkpoint&&!checkpoint->captured)for(int i=0;i<count;++i){
+            if(at+i==checkpoint->sample){checkpoint->dryEnergy=dryEnvelope;checkpoint->wetEnergy=wetEnvelope;checkpoint->captured=true;break;}
+            double dryLinked=0,wetLinked=0;for(int c=0;c<info.channels;++c){const auto channel=static_cast<size_t>(c),index=static_cast<size_t>(i);const double d=filteredDry[channel][index],w=filteredWet[channel][index];dryLinked+=d*d/info.channels;wetLinked+=w*w/info.channels;}
+            dryEnvelope=envelopeCoefficient*dryEnvelope+(1-envelopeCoefficient)*dryLinked;wetEnvelope=envelopeCoefficient*wetEnvelope+(1-envelopeCoefficient)*wetLinked;
+        }
         if(at+count>from){const auto skip=static_cast<int>(std::max<std::int64_t>(0,from-at));sink(at+skip,count-skip,input,dryOutput,wetOutput,filteredDry,filteredWet,skip);}
         at+=count;if(progress)progress->store(static_cast<double>(at)/until,std::memory_order_release);
     }
     return info;
 }
-struct FileInspection {WavInfo info;std::int64_t offset=0,windowEnd=0,measuredEnd=0;AudioData raw,dry,wet,auditionDry,auditionWet;int latency=0;Comparison comparison;std::vector<float> gainReductionHistory;std::array<std::vector<float>,3> bandGainReductionHistory;std::vector<std::int64_t> gainReductionSamples;};
+struct FileInspection {WavInfo info;std::int64_t offset=0,windowEnd=0,measuredEnd=0;AudioData raw,dry,wet,auditionDry,auditionWet;int latency=0;double dryInitialEnvelopeEnergy=0,wetInitialEnvelopeEnergy=0;Comparison comparison;std::vector<float> gainReductionHistory;std::array<std::vector<float>,3> bandGainReductionHistory;std::vector<std::int64_t> gainReductionSamples;};
 inline FileInspection inspectFile(const std::string& path,const Parameters& p,std::int64_t first,std::int64_t last,
                                   const FileCancel& cancel={},std::atomic<double>* progress=nullptr,AuditionBand band=AuditionBand::full,bool match=false) {
     WavStreamReader metadata(path);FileInspection result;result.info=metadata.info();result.offset=first;
@@ -67,6 +81,7 @@ inline FileInspection inspectFile(const std::string& path,const Parameters& p,st
     const auto cacheUntil=result.windowEnd+result.latency;const auto count=static_cast<size_t>(cacheUntil-first);
     for(auto* data:{&result.raw,&result.dry,&result.wet,&result.auditionDry,&result.auditionWet}){data->sampleRate=result.info.sampleRate;data->samples.assign(static_cast<size_t>(result.info.channels),std::vector<float>(count));}
     std::array<std::array<float,33>,2> dryHistory{};long double dd=0,ww=0,dw=0;double peak=0;
+    EnvelopeCheckpoint envelopeCheckpoint;envelopeCheckpoint.sample=first;
     processFileRange(path,p,std::max<std::int64_t>(0,first-result.latency),result.measuredEnd+result.latency,cancel,progress,[&](std::int64_t at,int n,const auto& in,const auto& dry,const auto& wet,const auto& filteredDry,const auto& filteredWet,int skip){
         if(at<cacheUntil){const auto copyCount=static_cast<int>(std::min<std::int64_t>(n,cacheUntil-at));const int begin=static_cast<int>(std::max<std::int64_t>(0,first-at));
             if(copyCount>begin)for(int c=0;c<result.info.channels;++c){const auto channel=static_cast<size_t>(c),offset=static_cast<size_t>(at+begin-first);const auto inputOffset=skip+begin;const auto amount=copyCount-begin;
@@ -75,7 +90,8 @@ inline FileInspection inspectFile(const std::string& path,const Parameters& p,st
         for(int i=0;i<n;++i){const auto current=at+i;for(int c=0;c<result.info.channels;++c)dryHistory[static_cast<size_t>(c)][static_cast<size_t>(current%33)]=filteredDry[static_cast<size_t>(c)][static_cast<size_t>(i+skip)];const auto source=current-result.latency;if(source<first||source>=result.measuredEnd)continue;
             for(int c=0;c<result.info.channels;++c){const auto channel=static_cast<size_t>(c);const long double d=dryHistory[channel][static_cast<size_t>(source%33)],w=filteredWet[channel][static_cast<size_t>(i+skip)];dd+=d*d;ww+=w*w;dw+=d*w;peak=std::max(peak,std::abs(static_cast<double>(w)));}
         }
-    },band,[&](std::int64_t sample,float gain,std::array<float,3> bands){if(sample>=first&&sample<cacheUntil){result.gainReductionSamples.push_back(sample);result.gainReductionHistory.push_back(gain);for(size_t b=0;b<3;++b)result.bandGainReductionHistory[b].push_back(bands[b]);}});
+    },band,[&](std::int64_t sample,float gain,std::array<float,3> bands){if(sample>=first&&sample<cacheUntil){result.gainReductionSamples.push_back(sample);result.gainReductionHistory.push_back(gain);for(size_t b=0;b<3;++b)result.bandGainReductionHistory[b].push_back(bands[b]);}},&envelopeCheckpoint);
+    if(!envelopeCheckpoint.captured)throw std::runtime_error("Envelope checkpoint was not captured");result.dryInitialEnvelopeEnergy=envelopeCheckpoint.dryEnergy;result.wetInitialEnvelopeEnergy=envelopeCheckpoint.wetEnergy;
     auto& comparison=result.comparison;const double samples=static_cast<double>(result.measuredEnd-first)*result.info.channels;comparison.dryRms=std::sqrt(static_cast<double>(dd/samples));comparison.wetRms=std::sqrt(static_cast<double>(ww/samples));
     if(result.measuredEnd-first>=2&&(!match||(comparison.dryRms>=1e-9&&comparison.wetRms>=1e-9))){if(match){const auto desired=comparison.dryRms/comparison.wetRms,limit=std::pow(10.,.6);comparison.gain=std::clamp(desired,1/limit,limit);comparison.gainCapped=comparison.gain!=desired;}const long double gain=comparison.gain;comparison.residualRms=std::sqrt(static_cast<double>(std::max(0.L,dd+gain*gain*ww-2*gain*dw)/samples));comparison.peak=peak*comparison.gain;comparison.valid=true;}
     return result;

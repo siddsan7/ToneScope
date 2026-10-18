@@ -102,3 +102,13 @@ frame zero to the original absolute selection frame. The native regression suite
 also checks resampling, absolute candidate cursor/EOF and verification rejection.
 Gain-reduction histories contain actual Engine state sampled at 512-frame block
 ends with explicit raw DSP source positions, including per-band reductions.
+Bounded windows also preserve the linked 10 ms mean-squared envelope state from
+source zero. FileInspection carries dryInitialEnvelopeEnergy and
+wetInitialEnvelopeEnergy immediately before cache sample zero, after the actual
+branch audition filters. Wet energy is on the raw DSP timeline; a consumer that
+aligns wet by 32 samples must advance the cached wet prefix from that state.
+The optional processFileRange checkpoint observes the processed prefix before
+range gating, adds only two energy accumulators, and stops its extra energy
+loop once captured. Playback and export do not request or compute this state.
+Stereo late-window, filter-history, 32-sample continuation and worker-block-edge
+regressions compare these states against independent full-source recurrences.
