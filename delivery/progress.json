@@ -196,7 +196,7 @@
     }
   },
   "verification": {
-    "scope": "Final clean PR4 implementation head9985851; compiled identity and artifacts/final/summary.json bind actual software checks/binaries. This closeout changes documentation only.",
+    "scope": "Final clean PR4 implementation9985851; compiled identity and artifacts/final/summary.json bind actual software checks/binaries. Closeout changes delivery records, evaluation tooling and CI publication policy; executable payload is unchanged.",
     "native_ctest_last_pass": {
       "pass": 7,
       "fail": 0,

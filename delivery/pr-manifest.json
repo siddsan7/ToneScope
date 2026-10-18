@@ -386,6 +386,12 @@
       "reviewed_head": "99858518b64d68692f25ce1165db2b017ab5747c",
       "merge_commit": "9e07e175e705306500376138f4b28d84971142ff",
       "review_evidence": "https://github.com/siddsan7/ToneScope/pull/4#issuecomment-6245835494"
+    },
+    {
+      "number": 5,
+      "scope": "Delivery records, public CI evidence publication and reproducible public musical DI regression",
+      "state": "Live review/check/merge state is authoritative at the status URL",
+      "status_url": "https://github.com/siddsan7/ToneScope/pull/5"
     }
   ]
 }
