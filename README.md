@@ -40,6 +40,6 @@ The optional assistant uses actual native measurements and rendered previews. It
 
 Start at `delivery/brain.md` for the compact current state. The complete original plan is preserved in `docs/memory/implementation-plan.md`; dependency and requirement manifests retain unfinished work. The orchestrator gives isolated workers only their API, relevant specification sections, owned paths and acceptance checks. Independent review findings become regression checks. Worker worktrees and downloaded tools are ignored by Git.
 
-See `docs/learning/00-start-here.md` for the learning tour, `docs/distribution/development.md` for private packages and install tools, and `qualification/` for device/human protocols. Private PRs #1–#3 are merged after independent review and Windows CI; integration PR #4 records the final independent review, exact-head checks and merge state. No public distribution or deployment has occurred.
+See `docs/learning/00-start-here.md` for the learning tour, `docs/distribution/development.md` for private packages and install tools, and `qualification/` for device/human protocols. Public implementation PRs #1–#3 are merged after independent review and Windows CI; integration PR #4 records the final independent review, exact-head checks and merge state. No GitHub Release or deployment has occurred; unsigned executable publication remains gated.
 
 Recovery and escalation: `docs/runbooks.md`. Actual product-source mutation campaigns exercise gain smoothing, session-version rejection and assistant authorization; see `evals/README.md`.

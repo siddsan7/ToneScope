@@ -44,3 +44,5 @@ infrastructure, not a signed/qualified installer. Clean-machine install, physica
 hardware lifecycle, human accessibility/listening and signing remain unperformed.
 Public distribution remains blocked on the JUCE licensing route and the
 repository's independent review/release gates.
+
+The repository and PRs are public. The unsigned payload is retained locally for development; publishing a Release or downloadable executable remains a separate licensing/review decision. CI uploads allowlisted reports, source-mutation evidence and synthetic WAV fixtures, excluding executable/ZIP payloads and package/broker staging. Prior task-created broad binary bundles were archived locally and removed when this policy gap was found.

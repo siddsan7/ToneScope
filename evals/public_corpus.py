@@ -94,6 +94,7 @@ def main():
             raise ValueError("unexpected frozen corpus inventory")
         verify_archive(archive_path, frozen["archive"])
         summary.update(corpus=frozen,archive_sha256=sha256(archive_path),cli_path=str(cli),cli_sha256=sha256(cli))
+        (out/"NOTICE.txt").write_text(frozen["attribution"]+"\nSource: "+frozen["source_url"]+"\nLicense: "+frozen["license_url"]+"\nChanges: "+frozen["transform"]+"\nEnabled outputs additionally apply the recorded ToneScope compressor/4x-drive settings. Public regression only; no endorsement or unseen-holdout claim.\n",encoding="utf-8")
         summary["compiled_build_info"] = command(out,"build-info","build-info")
         with zipfile.ZipFile(archive_path) as archive:
             write_json(out/"archive-listing.json",safe_listing(archive,frozen["maximum_uncompressed_bytes"]))

@@ -6,18 +6,19 @@
   "production_ready": false,
   "source_state": {
     "integration_branch": "codex/delivery-orchestration",
-    "merged_private_prs": [
-      1,
-      2,
-      3,
-      4
-    ],
     "public_release": false,
     "integration_pr": 4,
     "integration_pr_status": "Merged after independent agent review and both passing exact-head CI runs",
     "final_evidence_directory": "artifacts/final/",
     "delivered_code_commit": "99858518b64d68692f25ce1165db2b017ab5747c",
-    "integration_merge_commit": "9e07e175e705306500376138f4b28d84971142ff"
+    "integration_merge_commit": "9e07e175e705306500376138f4b28d84971142ff",
+    "merged_implementation_prs": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "repository_visibility": "public"
   },
   "requirements": {
     "TS-001": {
@@ -243,6 +244,24 @@
       "manifest_files": 25,
       "installer_checks": 33,
       "actual_packaged_embedded_workflow": "pass; development-service discovery disabled"
+    },
+    "public_DI_regression": {
+      "source": "https://zenodo.org/records/14963133",
+      "license": "CC-BY-4.0",
+      "archive_sha256": "033489e22600751fb5a1633e7d856b901c6782e0486fa02135e830780d9dbfe2",
+      "tested_originals": 2,
+      "pass": 2,
+      "scope": "Public inspectable musical DI; exact bypass null and finite4x/compressor smoke only, no holdout/listening claim",
+      "runner": "evals/public_corpus.py",
+      "inventory": "evals/datasets/guitar-techs-public.json",
+      "nightly": "Bounded acquisition plus offline musical regression on scheduled CI; PRs exercise acquisition bounds without download"
+    },
+    "closeout_python": {
+      "pass": 35,
+      "fail": 0,
+      "skipped": 0,
+      "log": ".tools/closeout-python.log",
+      "scope": "Includes bounded acquisition regressions; actual binary still reviewed implementation9985851"
     }
   },
   "external_blockers": [

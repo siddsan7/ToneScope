@@ -362,7 +362,7 @@
       "qualification_status": "unqualified_development"
     }
   ],
-  "note": "Specification task IDs are logical work units, not GitHub PR numbers. Actual private delivery PRs below consolidate dependency-compatible slices. Development verification does not imply release qualification.",
+  "note": "Specification task IDs are logical work units, not GitHub PR numbers. Actual delivery PRs below consolidate dependency-compatible slices. Development verification does not imply release qualification.",
   "actual_pull_requests": [
     {
       "number": 1,
