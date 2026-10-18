@@ -15,6 +15,7 @@
 #include <tonescope/ParameterState.h>
 #include "CaptureWorker.h"
 #include "SessionRecovery.h"
+#include "FilePlayback.h"
 #if __has_include("AssistantBridge.h")
 #include "AssistantBridge.h"
 #endif
@@ -55,6 +56,7 @@ struct Rendered {
     std::vector<double> drySpectrum, wetSpectrum;
 
     std::vector<tonescope::DynamicsFrame> dryDynamics, wetDynamics;
+    std::vector<float> gainReductionHistory;std::array<std::vector<float>,3> bandGainReductionHistory;std::vector<std::int64_t> gainReductionSamples;
     int latency = 0; std::uint64_t ingressClamps = 0;
 
 };
@@ -94,6 +96,7 @@ public:
     std::shared_ptr<const Rendered> data;
 
     double first=0, last=1, playhead=0;
+    double displayedFirst=0,displayedLast=1;std::int64_t fullFrames=0;
 
     std::function<void(double,double)> selection;
 
@@ -121,9 +124,10 @@ public:
 
         if(!data) { g.setColour(p.muted); g.drawFittedText("Import a WAV or capture a live take.\nYour sound becomes the instrument of study.",wave.toNearestInt(),juce::Justification::centred,3); return; }
 
-        auto frames=data->dry->frames();
+        auto frames=fullFrames>0?fullFrames:data->dry->frames();
 
-        g.setColour(p.dry.withAlpha(0.12f)); g.fillRect(juce::Rectangle<float>(wave.getX()+wave.getWidth()*(float)first,wave.getY(),wave.getWidth()*(float)(last-first),wave.getHeight()));
+        const auto viewSpan=juce::jmax(1.0e-12,displayedLast-displayedFirst);const auto visibleFirst=juce::jlimit(0.0,1.0,(first-displayedFirst)/viewSpan),visibleLast=juce::jlimit(visibleFirst,1.0,(last-displayedFirst)/viewSpan);
+        g.setColour(p.dry.withAlpha(0.12f)); g.fillRect(juce::Rectangle<float>(wave.getX()+wave.getWidth()*(float)visibleFirst,wave.getY(),wave.getWidth()*(float)(visibleLast-visibleFirst),wave.getHeight()));
 
         auto drawWave=[&](const std::vector<float>& peaks,juce::Colour c,bool dotted) {
 
@@ -145,7 +149,7 @@ public:
 
         drawWave(data->dryPeaks,p.dry,false); drawWave(data->wetPeaks,p.wet,true);
 
-        g.setColour(p.ink); auto px=wave.getX()+(float)playhead*wave.getWidth(); g.drawLine(px,wave.getY(),px,wave.getBottom(),1.5f);
+        g.setColour(p.ink); auto px=wave.getX()+(float)((playhead-displayedFirst)/viewSpan)*wave.getWidth(); if(px>=wave.getX()&&px<=wave.getRight())g.drawLine(px,wave.getY(),px,wave.getBottom(),1.5f);
 
         g.setFont(juce::FontOptions(13.0f)); g.drawText(juce::String(frames/data->dry->sampleRate,2)+" s  /  "+juce::String((int)data->dry->samples.size())+" channels",wave.toNearestInt().withY((int)wave.getBottom()+6).withHeight(24),juce::Justification::right);
 
@@ -179,11 +183,11 @@ public:
 
     }
 
-    void mouseDown(const juce::MouseEvent& e) override { anchor=juce::jlimit(0.0,1.0,(e.x-20.0)/(getWidth()-40)); mouseDrag(e); }
+    void mouseDown(const juce::MouseEvent& e) override { anchor=displayedFirst+juce::jlimit(0.0,1.0,(e.x-20.0)/(getWidth()-40))*(displayedLast-displayedFirst); mouseDrag(e); }
 
-    void mouseDrag(const juce::MouseEvent& e) override { if(!data)return;auto t=juce::jlimit(0.0,1.0,(e.x-20.0)/(getWidth()-40));first=juce::jmin(t,anchor);last=juce::jmax(t,anchor);repaint(); }
+    void mouseDrag(const juce::MouseEvent& e) override { if(!data)return;auto t=displayedFirst+juce::jlimit(0.0,1.0,(e.x-20.0)/(getWidth()-40))*(displayedLast-displayedFirst);first=juce::jmin(t,anchor);last=juce::jmax(t,anchor);repaint(); }
 
-    void mouseUp(const juce::MouseEvent&) override { if(last-first<0.001){first=0;last=1;}if(selection)selection(first,last); }
+    void mouseUp(const juce::MouseEvent&) override { if(!data)return;if(last-first<1.0/juce::jmax<std::int64_t>(1,fullFrames>0?fullFrames:data->dry->frames())){first=displayedFirst;last=displayedLast;}if(selection)selection(first,last); }
 
 private: double anchor=0;
 
@@ -209,7 +213,7 @@ public:
 
         button(playButton,"Play",[this]{togglePlay();});
 
-        button(stopButton,"Rewind",[this]{playing=false;position=selectionStart.load();});
+        button(stopButton,"Rewind",[this]{rewindPlayback();});
 
         button(deviceButton,"Audio devices",[this]{showDevices();});
 
@@ -267,7 +271,7 @@ public:
         addControl("Low crossover",40,1000,200," Hz",&tonescope::Parameters::crossoverLowHz);
         addControl("High crossover",500,10000,2000," Hz",&tonescope::Parameters::crossoverHighHz);
 
-        seek.setRange(0,1,0.00001);seek.setSliderStyle(juce::Slider::LinearHorizontal);seek.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);seek.setTitle("Playback position");seek.onValueChange=[this]{if(rendered)position=(int64_t)(seek.getValue()*rendered->dry->frames());};addAndMakeVisible(seek);
+        seek.setRange(0,1,0.00001);seek.setSliderStyle(juce::Slider::LinearHorizontal);seek.setTextBoxStyle(juce::Slider::NoTextBox,false,0,0);seek.setTitle("Playback position");seek.onValueChange=[this]{seekToFraction(seek.getValue());};addAndMakeVisible(seek);
 
         selectionFrom.setTitle("Selection start seconds");selectionTo.setTitle("Selection end seconds");
 
@@ -295,7 +299,7 @@ public:
         if(recovery.existsAsFile())setStatus("A recovery session is available. Ctrl+Shift+R restores it; monitoring remains off.");
     }
 
-    ~Main() override {stopTimer();shutdownAssistant();++revision;recording=false;devices.removeAudioCallback(this);if(captureWorker){captureWorker->interrupt();captureWorker->stop();}pool.removeAllJobs(true,-1);devices.closeAudioDevice();juce::Desktop::getInstance().removeDarkModeSettingListener(this);setLookAndFeel(nullptr);}
+    ~Main() override {stopTimer();shutdownAssistant();++revision;if(inspectionCancel)inspectionCancel->store(true);if(exportCancel)exportCancel->store(true);recording=false;devices.removeAudioCallback(this);if(filePlayback)filePlayback->cancel();if(retiringPlayback)retiringPlayback->cancel();if(captureWorker){captureWorker->interrupt();captureWorker->stop();}pool.removeAllJobs(true,-1);devices.closeAudioDevice();juce::Desktop::getInstance().removeDarkModeSettingListener(this);setLookAndFeel(nullptr);}
 
     void paint(juce::Graphics& g) override {
 
@@ -350,7 +354,7 @@ public:
         if(key.getModifiers().isCommandDown()&&key.getKeyCode()=='Y'){redoParameters();return true;}
         if(key.getModifiers().isCommandDown()&&key.getModifiers().isShiftDown()&&key.getKeyCode()=='R'){restoreRecovery();return true;}
         if(key.getModifiers().isCommandDown()&&key.getModifiers().isShiftDown()&&key.getKeyCode()=='O'){openSession();return true;}
-        if(key.getModifiers().isCommandDown()&&key.getKeyCode()=='E'){exportAudio();return true;}
+        if(key.getModifiers().isCommandDown()&&key.getKeyCode()=='E'){exportAudio(key.getModifiers().isShiftDown());return true;}
 
         if(key==juce::KeyPress::spaceKey){togglePlay();return true;}
 
@@ -358,23 +362,33 @@ public:
 
         if(key.getModifiers().isCommandDown()&&key.getKeyCode()=='S'){saveSession();return true;}
 
-        if(key.getKeyCode()==juce::KeyPress::escapeKey){playing=false;return true;}
+        if(key.getKeyCode()==juce::KeyPress::escapeKey){playing=false;retireFilePlayback();if(busy){if(inspectionCancel)inspectionCancel->store(true);++revision;busy=false;}if(exportCancel)exportCancel->store(true);setStatus("Playback stopped; pending file work cancelled.");return true;}
 
         return false;
 
     }
 
+    void loadStartupSource(const juce::File& file){if(!file.existsAsFile()){setStatus("Startup source must be an existing absolute WAV path.");return;}loadAudio(file);}
     void loadSyntheticDemo() {
 
         auto demo=std::make_shared<tonescope::AudioData>();demo->sampleRate=48000;demo->samples.assign(2,std::vector<float>(96000));
 
-        for(size_t n=0;n<demo->samples[0].size();++n){double t=n/48000.0;double envelope=std::exp(-3.5*std::fmod(t,0.5));double value=.34*envelope*(std::sin(2*juce::MathConstants<double>::pi*110*t)+.32*std::sin(2*juce::MathConstants<double>::pi*330*t));demo->samples[0][n]=(float)value;demo->samples[1][n]=(float)(value*.92);}
+        for(size_t n=0;n<demo->samples[0].size();++n){double t=n/48000.0;double envelope=std::exp(-3.5*std::fmod(t,0.5));double value=(static_cast<int>(t/.5)%2==0?.12:.34)*envelope*(std::sin(2*juce::MathConstants<double>::pi*110*t)+.32*std::sin(2*juce::MathConstants<double>::pi*330*t));demo->samples[0][n]=(float)value;demo->samples[1][n]=(float)(value*.92);}
 
-        source=demo;sourceFile={};stages[2].setToggleState(true,juce::dontSendNotification);scope.first=.1;scope.last=.8;requestRender();
+        streamedSource=false;inspectionOffset=0;inspectionEnd=demo->frames();scope.fullFrames=0;scope.displayedFirst=0;scope.displayedLast=1;source=demo;sourceFile={};sourceDigest={};stages[2].setToggleState(true,juce::dontSendNotification);scope.first=.1;scope.last=.8;requestRender();
 
     }
 
 private:
+
+    struct CancelableSourceInput final:juce::InputStream {
+        juce::FileInputStream input;tonescope::desktop::FileCancel cancel;
+        CancelableSourceInput(const juce::File& file,tonescope::desktop::FileCancel flag):input(file),cancel(std::move(flag)){if(input.failedToOpen())throw std::runtime_error("Cannot open source for digest verification");}
+        juce::int64 getTotalLength()override{return input.getTotalLength();}bool isExhausted()override{return input.isExhausted();}
+        juce::int64 getPosition()override{return input.getPosition();}bool setPosition(juce::int64 at)override{return input.setPosition(at);}
+        int read(void* destination,int bytes)override{if(cancel&&cancel->load(std::memory_order_acquire))throw tonescope::desktop::CancelledFileOperation();return input.read(destination,bytes);}
+    };
+    static juce::String hashSource(const juce::File& file,const tonescope::desktop::FileCancel& cancel={}){CancelableSourceInput input(file,cancel);return juce::SHA256(input).toHexString();}
 
     struct Control {juce::Label label;juce::Slider slider;juce::String key;float tonescope::Parameters::*member;};
 
@@ -396,6 +410,12 @@ private:
     int oversampling=1;bool multiband=false;int auditionBand=0;
 
     std::shared_ptr<const tonescope::AudioData> source;
+    bool streamedSource=false,streamPlayRequested=false;tonescope::WavInfo streamingInfo;
+    std::int64_t inspectionOffset=0,inspectionEnd=0;double streamPlaybackRate=0;
+    std::shared_ptr<tonescope::desktop::FilePlayback> filePlayback,retiringPlayback;std::function<void()> streamDeferredStart;
+    tonescope::desktop::FileCancel inspectionCancel,exportCancel;std::shared_ptr<std::atomic<double>> inspectionProgress;
+    std::atomic<int> streamEvent{0};
+    std::array<float,2> streamLastSample{};
 
     std::shared_ptr<const Rendered> rendered;juce::File sourceFile;juce::String sourceDigest;
 
@@ -437,8 +457,39 @@ private:
 
     }
 
+    std::int64_t sourceFrameCount()const{return streamedSource?streamingInfo.frames:(source?source->frames():0);}
+    double sourceSampleRate()const{return streamedSource?streamingInfo.sampleRate:(source?source->sampleRate:deviceRate.load());}
+    void retireFilePlayback(){
+        playing=false;streamPlayRequested=false;streamDeferredStart={};
+        if(retiringPlayback&&retiringPlayback->finished()){retiringPlayback->cancel();retiringPlayback.reset();}
+        if(!filePlayback){streamEvent=0;return;}
+        detach();streamEvent=0;retiringPlayback=std::move(filePlayback);retiringPlayback->requestCancel();attach();
+    }
+    bool deferUntilPlaybackRetires(std::function<void()> start){
+        if(!retiringPlayback)return false;
+        if(retiringPlayback->finished()){retiringPlayback->cancel();retiringPlayback.reset();return false;}
+        streamDeferredStart=std::move(start);streamPlayRequested=true;setStatus("Waiting for the previous file worker to stop before preparing the latest seek...");return true;
+    }    void rewindPlayback(){playing=false;if(streamedSource)retireFilePlayback();position=static_cast<double>(selectionStart.load());}
+    void fadeStreamToSilence(float* const* outputs,int channels,int offset,int available,float& peak)noexcept{const auto n=juce::jmin(64,available);for(int c=0;c<channels;++c)if(outputs[c])for(int i=0;i<n;++i){auto value=streamLastSample[static_cast<size_t>(juce::jmin(c,1))]*static_cast<float>(n-i-1)/n;outputs[c][offset+i]=value;peak=juce::jmax(peak,std::abs(value));}streamLastSample={};}
+    void seekToFraction(double fraction){if(!source)return;const bool wasPlaying=playing.load()||streamPlayRequested;position=juce::jlimit<std::int64_t>(0,juce::jmax<std::int64_t>(0,sourceFrameCount()-1),static_cast<std::int64_t>(fraction*sourceFrameCount()));if(streamedSource){retireFilePlayback();if(wasPlaying)startFilePlayback(static_cast<std::int64_t>(position.load()));}}
+    void startFilePlayback(std::int64_t first){
+        retireFilePlayback();if(deferUntilPlaybackRetires([this,first]{startFilePlayback(first);}))return;auto last=selectionEnd.load();if(first<selectionStart||first>=last)first=selectionStart.load();
+        auto file=sourceFile;auto digest=sourceDigest;auto p=parameters();streamPlaybackRate=deviceRate.load();
+        detach();streamLastSample={};filePlayback=std::make_shared<tonescope::desktop::FilePlayback>(file.getFullPathName().toStdString(),p,first,last,streamPlaybackRate,[file,digest](const tonescope::desktop::FileCancel& cancel){return hashSource(file,cancel)==digest;},static_cast<tonescope::AuditionBand>(auditionBand));attach();
+        position=static_cast<double>(first);streamPlayRequested=true;setStatus("Preparing streamed playback: verifying source and reconstructing exact processing history from frame zero...");
+    }
+
+    bool startCandidatePlayback(const juce::File& file,const juce::String& digest,std::int64_t absoluteFirst,std::int64_t frameCount){
+        if(frameCount<1||absoluteFirst<0||digest.length()!=64)return false;
+        retireFilePlayback();if(deferUntilPlaybackRetires([this,file,digest,absoluteFirst,frameCount]{startCandidatePlayback(file,digest,absoluteFirst,frameCount);}))return true;tonescope::Parameters bypass;bypass.toneHz=static_cast<float>(juce::jmin(5000.,.45*sourceSampleRate()));
+        const auto rate=sourceSampleRate();streamPlaybackRate=deviceRate.load();detach();streamLastSample={};
+        filePlayback=std::make_shared<tonescope::desktop::FilePlayback>(file.getFullPathName().toStdString(),bypass,0,frameCount,streamPlaybackRate,[file,digest,rate](const tonescope::desktop::FileCancel& cancel){tonescope::WavStreamReader reader(file.getFullPathName().toStdString());return reader.info().sampleRate==rate&&hashSource(file,cancel)==digest;},tonescope::AuditionBand::full,static_cast<double>(absoluteFirst));attach();
+        position=static_cast<double>(absoluteFirst);streamPlayRequested=true;setStatus("Preparing verified assistant candidate audition...");return true;
+    }
+    void pausePlayback(){playing=false;if(streamPlayRequested)retireFilePlayback();}
     void parametersChanged(bool topology=false){
         assistantSessionChanged();
+        if(filePlayback)retireFilePlayback();if(streamedSource&&inspectionCancel)inspectionCancel->store(true);
 
         if(topology&&monitoring){if(recording)toggleCapture();else setLive(false);setStatus("Signal-chain change stopped monitoring. Re-enable it when ready.");}
 
@@ -459,6 +510,14 @@ private:
 
     void timerCallback() override {
         updateAssistant();
+        if(retiringPlayback&&retiringPlayback->finished()){retiringPlayback->cancel();retiringPlayback.reset();if(streamDeferredStart){auto start=std::move(streamDeferredStart);streamDeferredStart={};start();}}
+        if(filePlayback){
+            if(filePlayback->failed()){retireFilePlayback();setStatus("Source verification/read failed; streamed playback stopped.");}
+            else if(streamPlaybackRate!=deviceRate.load()){retireFilePlayback();setStatus("Device rate changed. Streamed playback stopped; press Play to prepare again.");}
+            else if(streamPlayRequested){if(filePlayback->failed()){retireFilePlayback();setStatus("Streamed source verification/read failed. Playback remains stopped.");}else if(filePlayback->ready()){streamPlayRequested=false;playing=true;}else setStatus("Reconstructing exact source history for playback | "+juce::String(filePlayback->progress()*100,1)+"% of requested history");}
+        }
+        if(auto event=streamEvent.exchange(0);event!=0){if(event==2&&looping&&streamedSource)startFilePlayback(selectionStart.load());else{retireFilePlayback();setStatus(event==2?"Streamed selection ended.":"Streamed playback stopped after starvation or a source read fault. No fallback audio was substituted.");}}
+        if(busy&&streamedSource&&inspectionProgress)setStatus("Preparing bounded inspection with exact history from frame zero | "+juce::String(inspectionProgress->load()*100,1)+"%");
 
         if(deviceFault.exchange(false)){live.setToggleState(false,juce::dontSendNotification);setStatus("Monitoring stopped after a device or control fault. Check Audio devices, then explicitly re-enable.");}
 
@@ -468,7 +527,7 @@ private:
 
         playButton.setEnabled(rendered&&renderedRevision==revision&&!busy&&!monitoring);captureButton.setEnabled(monitoring);
 
-        if(rendered){auto t=(double)position.load()/juce::jmax<int64_t>(1,rendered->dry->frames());seek.setValue(t,juce::dontSendNotification);scope.playhead=t;scope.repaint();}
+        if(rendered){auto t=(double)position.load()/juce::jmax<int64_t>(1,sourceFrameCount());seek.setValue(t,juce::dontSendNotification);scope.playhead=t;scope.repaint();}
 
         if(captureWorker&&captureWorker->stopped()&&!captureFinalizing){recording=false;finishCapture();}
         if(recoveryDirty&&juce::Time::currentTimeMillis()>=recoveryDue){recoveryDirty=false;if(sourceFile.existsAsFile()){auto text=juce::JSON::toString(session());pool.addJob(new Job([text]{auto folder=tonescope::desktop::recoveryDirectory();if(folder.createDirectory())tonescope::desktop::saveSessionAtomically(folder.getChildFile("session.json"),text);}),true);}}
@@ -479,9 +538,9 @@ private:
 
     void detach(){devices.removeAudioCallback(this);}void attach(){auto w=commandWrite.load();if(w-commandRead.load(std::memory_order_acquire)<commands.size()){commands[w%commands.size()]=parameters();commandWrite.store(w+1,std::memory_order_release);}devices.addAudioCallback(this);}
 
-    void togglePlay(){if(rendered&&renderedRevision==revision&&!busy&&!monitoring){if(position>=selectionEnd)position=selectionStart.load();playing=!playing.load();}}
+    void togglePlay(){if(rendered&&renderedRevision==revision&&!busy&&!monitoring){if(streamedSource){if(streamPlayRequested){retireFilePlayback();return;}if(playing){playing=false;return;}if(filePlayback&&!filePlayback->exhausted()&&!filePlayback->failed()&&streamPlaybackRate==deviceRate.load()){playing=true;return;}startFilePlayback(static_cast<std::int64_t>(position.load()));return;}if(position>=selectionEnd)position=selectionStart.load();playing=!playing.load();}}
 
-    void audioDeviceAboutToStart(juce::AudioIODevice* d) override {if(monitoring.exchange(false))deviceFault=true;playing=false;deviceRate=d->getCurrentSampleRate();deviceBlock=d->getCurrentBufferSizeSamples();try{auto p=parameters();liveEngine.prepare(deviceRate.load(),2,p);tonescope::Parameters dry;dry.inputDb=p.inputDb;dry.toneHz=(float)juce::jmin(5000.0,.45*deviceRate.load());liveDryEngine.prepare(deviceRate.load(),2,dry);}catch(...){deviceFault=true;}if(rendered)sourceStep=rendered->dry->sampleRate/deviceRate;}
+    void audioDeviceAboutToStart(juce::AudioIODevice* d) override {if(monitoring.exchange(false))deviceFault=true;playing=false;deviceRate=d->getCurrentSampleRate();deviceBlock=d->getCurrentBufferSizeSamples();try{auto p=parameters();std::string inactiveError;if(!tonescope::validate(p,deviceRate.load(),inactiveError)){p=tonescope::Parameters{};p.toneHz=static_cast<float>(juce::jmin(5000.,.45*deviceRate.load()));}liveEngine.prepare(deviceRate.load(),2,p);tonescope::Parameters dry;dry.inputDb=p.inputDb;dry.toneHz=(float)juce::jmin(5000.0,.45*deviceRate.load());liveDryEngine.prepare(deviceRate.load(),2,dry);}catch(...){deviceFault=true;}if(rendered)sourceStep=rendered->dry->sampleRate/deviceRate;}
 
     void audioDeviceStopped() override {playing=false;monitoring=false;if(recording.exchange(false)&&captureWorker)captureWorker->interrupt();}
 
@@ -493,7 +552,7 @@ private:
 
         for(int c=0;c<no;++c)if(outs[c])juce::FloatVectorOperations::clear(outs[c],frames);
 
-        auto r=commandRead.load();const auto w=commandWrite.load(std::memory_order_acquire);if(r!=w){tonescope::Parameters latest;for(unsigned n=0;r!=w&&n<32;++n,++r)latest=commands[r%commands.size()];tonescope::Parameters dry;dry.inputDb=latest.inputDb;dry.toneHz=(float)juce::jmin(5000.0,.45*deviceRate.load());if(!liveEngine.setParametersRealtime(latest)||!liveDryEngine.setParametersRealtime(dry)){monitoring=false;playing=false;deviceFault=true;}}commandRead.store(r,std::memory_order_release);
+        auto r=commandRead.load();const auto w=commandWrite.load(std::memory_order_acquire);if(r!=w){tonescope::Parameters latest;for(unsigned n=0;r!=w&&n<32;++n,++r)latest=commands[r%commands.size()];tonescope::Parameters dry;dry.inputDb=latest.inputDb;dry.toneHz=(float)juce::jmin(5000.0,.45*deviceRate.load());if(monitoring.load()&&(!liveEngine.setParametersRealtime(latest)||!liveDryEngine.setParametersRealtime(dry))){monitoring=false;playing=false;deviceFault=true;}}commandRead.store(r,std::memory_order_release);
 
         float peak=0;uint64_t guarded=0;
 
@@ -514,7 +573,13 @@ private:
 
             reduction=liveEngine.gainReductionDb();invalid=liveEngine.invalidSamples();
 
-        }else if(playing.load()&&rendered){
+        }else if(playing.load()&&filePlayback){
+            auto* playback=filePlayback.get();if(playback->failed()){fadeStreamToSilence(outs,no,0,frames,peak);playing=false;streamEvent=3;outputPeak=peak;return;}const auto choice=audition.load();const auto gain=rendered&&rendered->comparison.valid?rendered->comparison.gain:1.;double next=position.load();
+            for(int offset=0;offset<frames;offset+=chunk){const auto wanted=juce::jmin(chunk,frames-offset);float* dry[]{dryScratch[0].data(),dryScratch[1].data()};float* wet[]{outputScratch[0].data(),outputScratch[1].data()};const auto count=playback->pull(dry,wet,wanted,next);
+                for(int i=0;i<count;++i){const auto sourceAt=next-(count-i)*sourceStep.load();const auto fade=juce::jlimit(0.,1.,juce::jmin((sourceAt-selectionStart.load())/128.,(selectionEnd.load()-sourceAt)/128.));for(int c=0;c<no;++c)if(outs[c]){const auto channel=static_cast<size_t>(juce::jmin(c,1));const auto d=dryScratch[channel][static_cast<size_t>(i)],w=outputScratch[channel][static_cast<size_t>(i)];float v=static_cast<float>((choice==1?d:choice==2?w*gain:choice==3?w-d:w*gain-d)*fade);if(!std::isfinite(v)||std::abs(v)>.95f)++guarded;v=std::isfinite(v)?juce::jlimit(-.95f,.95f,v):0;outs[c][offset+i]=v;if(c<2)streamLastSample[static_cast<size_t>(c)]=v;peak=juce::jmax(peak,std::abs(v));}}
+                position=next;if(count<wanted){fadeStreamToSilence(outs,no,offset+count,frames-offset-count,peak);playing=false;streamEvent=playback->failed()?3:playback->exhausted()?2:1;break;}
+            }
+        }else if(playing.load()&&!streamedSource&&rendered){
 
             auto* a=rendered.get();double pos=(double)position.load();auto start=selectionStart.load(),end=selectionEnd.load();auto choice=audition.load();double gain=a->comparison.valid?a->comparison.gain:1;
 
@@ -545,36 +610,42 @@ private:
     }
 
     void loadAudio(const juce::File& file,juce::String expectedDigest={},juce::var restoredState={}){
-        assistantSessionChanged();
-
+        assistantSessionChanged();if(inspectionCancel)inspectionCancel->store(true);retireFilePlayback();auto operationCancel=std::make_shared<std::atomic<bool>>(false);inspectionCancel=operationCancel;
         if(monitoring){setLive(false);live.setToggleState(false,juce::dontSendNotification);}
-
-        playing=false;busy=true;const auto token=++revision;StaleJobs stale;pool.removeAllJobs(false,0,&stale);setStatus("Loading "+file.getFileName()+"...");auto safe=juce::Component::SafePointer<Main>(this);
-
-        pool.addJob(new Job([safe,file,token,expectedDigest,restoredState]{
-
-            try{if(file.getSize()>100*1024*1024)throw std::runtime_error("Development cached importer accepts files up to 100 MiB / 120 seconds.");juce::FileInputStream before(file);if(before.failedToOpen())throw std::runtime_error("Cannot hash source.");auto digest=juce::SHA256(before).toHexString();if(expectedDigest.isNotEmpty()&&expectedDigest!=digest)throw std::runtime_error("Session source content changed; import it as a new source.");auto audio=std::make_shared<tonescope::AudioData>(tonescope::readWav(file.getFullPathName().toStdString()));juce::FileInputStream after(file);if(after.failedToOpen()||juce::SHA256(after).toHexString()!=digest)throw std::runtime_error("Source changed while importing; retry from a stable file.");
-
-                if(audio->frames()<1||audio->frames()/audio->sampleRate>maxSeconds)throw std::runtime_error("Use a WAV between one frame and 120 seconds for the cached microscope.");
-                if(restoredState.isObject()){std::string error;if(!tonescope::validate(tonescope::session::loadParametersDocument(restoredState),audio->sampleRate,error))throw std::runtime_error("Session/source rate mismatch: "+error);}
-
-                juce::MessageManager::callAsync([safe,audio,file,token,digest,restoredState]{if(!safe||safe->revision!=token)return;safe->source=audio;safe->sourceFile=file;safe->sourceDigest=digest;safe->scope.first=0;safe->scope.last=1;
-                    if(restoredState.isObject()){
-                        safe->applyParameterTransaction(tonescope::session::loadParametersDocument(restoredState));auto ui=restoredState["ui"];safe->auditionBand=ui.hasProperty("band")?(int)ui["band"]:0;
-                        safe->scope.first=ui.hasProperty("selection_start")?(double)ui["selection_start"]:0;safe->scope.last=ui.hasProperty("selection_end")?(double)ui["selection_end"]:1;
-                        auto selected=ui["audition"].toString();bool rms=(bool)ui["rms_match"];int modeId=selected=="dry"?1:selected=="residual"?(rms?4:3):2;
-                        safe->mode.setSelectedId(modeId,juce::dontSendNotification);safe->audition=modeId;safe->match.setToggleState(rms,juce::dontSendNotification);
-                    }
-                    safe->markRecovery();safe->requestRender();});
-
-            }catch(const std::exception& e){auto message=juce::String(e.what());juce::MessageManager::callAsync([safe,message,token]{if(safe&&safe->revision==token){safe->busy=false;safe->setStatus("Import failed: "+message);}});}
-
-        },true),true);
-
+        playing=false;busy=true;const auto token=++revision;StaleJobs stale;pool.removeAllJobs(false,0,&stale);setStatus("Verifying "+file.getFileName()+"...");auto safe=juce::Component::SafePointer<Main>(this);
+        pool.addJob(new Job([safe,file,token,expectedDigest,restoredState,operationCancel]{try{
+            tonescope::WavStreamReader metadata(file.getFullPathName().toStdString());auto info=metadata.info();
+            auto digest=hashSource(file,operationCancel);if(expectedDigest.isNotEmpty()&&digest!=expectedDigest)throw std::runtime_error("Session source content changed; import it as a new source");
+            const bool streamed=file.getSize()>100*1024*1024||info.frames/info.sampleRate>maxSeconds;
+            auto audio=std::make_shared<tonescope::AudioData>();audio->sampleRate=info.sampleRate;audio->samples.resize(static_cast<size_t>(info.channels));
+            if(!streamed){*audio=tonescope::readWav(file.getFullPathName().toStdString());if(hashSource(file,operationCancel)!=digest)throw std::runtime_error("Source changed during import");}
+            if(restoredState.isObject()){std::string error;if(!tonescope::validate(tonescope::session::loadParametersDocument(restoredState),info.sampleRate,error))throw std::runtime_error("Session/source rate mismatch: "+error);}
+            juce::MessageManager::callAsync([safe,audio,file,token,digest,restoredState,info,streamed]{if(!safe||safe->revision!=token)return;safe->detach();safe->source=audio;safe->sourceFile=file;safe->sourceDigest=digest;safe->streamedSource=streamed;safe->streamingInfo=info;safe->inspectionOffset=0;safe->inspectionEnd=0;safe->scope.first=0;safe->scope.last=1;safe->scope.fullFrames=streamed?info.frames:0;safe->scope.displayedFirst=0;safe->scope.displayedLast=1;
+                if(restoredState.isObject()){safe->writeParameterControls(tonescope::session::loadParametersDocument(restoredState));safe->history.commit(safe->parameters());auto ui=restoredState["ui"];safe->auditionBand=ui.hasProperty("band")?(int)ui["band"]:0;safe->scope.first=ui.hasProperty("selection_start")?(double)ui["selection_start"]:0;safe->scope.last=ui.hasProperty("selection_end")?(double)ui["selection_end"]:1;auto selected=ui["audition"].toString();bool rms=(bool)ui["rms_match"];int modeId=selected=="dry"?1:selected=="residual"?(rms?4:3):2;safe->mode.setSelectedId(modeId,juce::dontSendNotification);safe->audition=modeId;safe->match.setToggleState(rms,juce::dontSendNotification);}
+                safe->attach();safe->markRecovery();safe->requestRender();});
+        }catch(const std::exception& e){auto message=juce::String(e.what());juce::MessageManager::callAsync([safe,message,token]{if(safe&&safe->revision==token){safe->busy=false;safe->setStatus("Import failed: "+message);}});}},true),true);
     }
-
+    void requestStreamInspection(){
+        if(!source||monitoring)return;retireFilePlayback();if(inspectionCancel)inspectionCancel->store(true);playing=false;busy=true;
+        const auto token=++revision;auto cancel=std::make_shared<std::atomic<bool>>(false);inspectionCancel=cancel;auto progress=std::make_shared<std::atomic<double>>(0);inspectionProgress=progress;
+        auto p=parameters();auto file=sourceFile;auto digest=sourceDigest;const auto total=sourceFrameCount();const auto first=static_cast<std::int64_t>(scope.first*total);const auto last=juce::jlimit<std::int64_t>(first+1,total,static_cast<std::int64_t>(scope.last*total));const auto band=static_cast<tonescope::AuditionBand>(auditionBand);const bool rms=match.getToggleState()||mode.getSelectedId()==4;
+        StaleJobs stale;pool.removeAllJobs(false,0,&stale);auto safe=juce::Component::SafePointer<Main>(this);setStatus("Verifying source and reconstructing exact processing history for bounded inspection...");
+        pool.addJob(new Job([safe,token,cancel,progress,p,file,digest,first,last,band,rms]{try{
+            if(hashSource(file,cancel)!=digest)throw std::runtime_error("Source changed since import; import it again");
+            auto window=tonescope::desktop::inspectFile(file.getFullPathName().toStdString(),p,first,last,cancel,progress.get(),band,rms);if(cancel->load())return;
+            const auto end=window.windowEnd;const auto measuredEnd=window.measuredEnd;auto comparison=window.comparison;auto result=std::make_shared<Rendered>();result->raw=std::make_shared<tonescope::AudioData>(std::move(window.raw));result->exportWet=std::make_shared<tonescope::AudioData>(std::move(window.wet));result->dry=std::make_shared<tonescope::AudioData>(std::move(window.auditionDry));result->wet=std::make_shared<tonescope::AudioData>(std::move(window.auditionWet));result->latency=window.latency;result->gainReductionHistory=std::move(window.gainReductionHistory);result->bandGainReductionHistory=std::move(window.bandGainReductionHistory);result->gainReductionSamples=std::move(window.gainReductionSamples);result->graphKey=tonescope::session::hashParameters(p)+"|stream|"+digest+"|"+juce::String(first)+"|"+juce::String(static_cast<int>(band));
+            auto peaks=[](const tonescope::AudioData& data){std::vector<float> bins(2048,0);for(std::int64_t n=0;n<data.frames();++n)for(const auto& channel:data.samples)bins[static_cast<size_t>(n*2048/data.frames())]=juce::jmax(bins[static_cast<size_t>(n*2048/data.frames())],std::abs(channel[static_cast<size_t>(n)]));return bins;};
+            result->dryPeaks=peaks(*result->dry);result->wetPeaks=peaks(*result->wet);result->comparison=comparison;result->drySpectrum=tonescope::spectrum(*result->dry,0);result->wetSpectrum=tonescope::spectrum(*result->wet,result->latency);result->dryDynamics=tonescope::dynamics(*result->dry);result->wetDynamics=tonescope::dynamics(*result->wet);
+            for(const auto& channel:result->raw->samples)for(float sample:channel)if(std::abs(sample)>16)++result->ingressClamps;
+            if(hashSource(file,cancel)!=digest)throw std::runtime_error("Source changed during inspection");
+            juce::MessageManager::callAsync([safe,token,result,first,last,end,measuredEnd]{if(!safe||safe->revision!=token)return;safe->detach();safe->source=result->raw;safe->rendered=result;safe->renderedRevision=token;safe->inspectionOffset=first;safe->inspectionEnd=end+result->latency;safe->sourceStep=safe->sourceSampleRate()/safe->deviceRate.load();safe->selectionStart=first;safe->selectionEnd=juce::jmin<std::int64_t>(last,safe->sourceFrameCount()-result->latency);safe->position=static_cast<double>(first);safe->scope.data=result;safe->scope.displayedFirst=static_cast<double>(first)/safe->sourceFrameCount();safe->scope.displayedLast=static_cast<double>(end+result->latency)/safe->sourceFrameCount();safe->scope.fullFrames=safe->sourceFrameCount();safe->busy=false;safe->inspectionProgress.reset();safe->updateMicroscope();safe->attach();
+                const auto rate=safe->sourceSampleRate();safe->selectionFrom.setText(juce::String(first/rate,3),false);safe->selectionTo.setText(juce::String(last/rate,3),false);safe->metrics.setText((result->comparison.valid?"Measured interval ":"Comparison unavailable (silence or insufficient data); interval ")+juce::String(first/rate,3)+" - "+juce::String(measuredEnd/rate,3)+" s | RMS match "+juce::String(result->comparison.valid?20*std::log10(result->comparison.gain):0,2)+" dB | full source "+juce::String(safe->sourceFrameCount()/rate,2)+" s | exact history from frame zero",juce::dontSendNotification);
+                safe->setStatus("Ready | streamed source; waveform window covers "+juce::String(first/rate,3)+" - "+juce::String(end/rate,3)+" s only (10 s / 1,048,576 frame cache bound). RMS metrics, playback and export use the full selected timeline.");safe->scope.repaint();});
+        }catch(const tonescope::desktop::CancelledFileOperation&){}catch(const std::exception& e){auto message=juce::String(e.what());juce::MessageManager::callAsync([safe,token,message]{if(safe&&safe->revision==token){safe->busy=false;safe->inspectionProgress.reset();safe->setStatus("Streamed inspection failed: "+message);}});}},true),true);
+    }
     void requestRender(){
         assistantSessionChanged();
+        if(streamedSource){requestStreamInspection();return;}
 
         if(!source||monitoring)return;playing=false;busy=true;const auto token=++revision;StaleJobs stale;pool.removeAllJobs(false,0,&stale);auto input=source;auto p=parameters();auto a=(int64_t)(scope.first*input->frames()),b=(int64_t)(scope.last*input->frames());b=juce::jlimit<int64_t>(a+1,input->frames(),b);bool rms=match.getToggleState()||mode.getSelectedId()==4;
 
@@ -586,7 +657,7 @@ private:
 
             auto result=std::make_shared<Rendered>();result->raw=input;result->graphKey=key;
 
-            if(previous&&previous->raw==input&&previous->graphKey==key){result->dry=previous->dry;result->wet=previous->wet;result->exportWet=previous->exportWet;result->dryPeaks=previous->dryPeaks;result->wetPeaks=previous->wetPeaks;result->ingressClamps=previous->ingressClamps;}
+            if(previous&&previous->raw==input&&previous->graphKey==key){result->dry=previous->dry;result->wet=previous->wet;result->exportWet=previous->exportWet;result->dryPeaks=previous->dryPeaks;result->wetPeaks=previous->wetPeaks;result->ingressClamps=previous->ingressClamps;result->gainReductionHistory=previous->gainReductionHistory;result->bandGainReductionHistory=previous->bandGainReductionHistory;result->gainReductionSamples=previous->gainReductionSamples;}
 
             else {
 
@@ -608,7 +679,7 @@ private:
 
             auto fft=[&](const tonescope::AudioData& data,int offset){tonescope::AudioData window;window.sampleRate=data.sampleRate;window.samples.assign(data.samples.size(),std::vector<float>(2048,0));for(size_t c=0;c<data.samples.size();++c)for(int64_t i=0;i<juce::jmin<int64_t>(2048,measuredEnd-a);++i)window.samples[c][(size_t)i]=data.samples[c][(size_t)(a+i+offset)];return tonescope::spectrum(window,0);};result->drySpectrum=fft(*result->dry,0);result->wetSpectrum=fft(*result->wet,result->latency);
 
-            juce::MessageManager::callAsync([safe,token,result,a,b]{if(!safe||safe->revision!=token)return;safe->detach();safe->rendered=result;safe->renderedRevision=token;safe->sourceStep=result->dry->sampleRate/safe->deviceRate;safe->selectionStart=a;safe->selectionEnd=juce::jmin<int64_t>(b,result->dry->frames()-result->latency);safe->position=a;safe->scope.data=result;safe->busy=false;safe->attach();safe->selectionFrom.setText(juce::String(a/result->dry->sampleRate,3),false);safe->selectionTo.setText(juce::String(b/result->dry->sampleRate,3),false);
+            juce::MessageManager::callAsync([safe,token,result,a,b]{if(!safe||safe->revision!=token)return;safe->detach();safe->rendered=result;safe->renderedRevision=token;safe->sourceStep=result->dry->sampleRate/safe->deviceRate;safe->selectionStart=a;safe->selectionEnd=juce::jmin<int64_t>(b,result->dry->frames()-result->latency);safe->position=a;safe->scope.data=result;safe->busy=false;safe->updateMicroscope();safe->attach();safe->selectionFrom.setText(juce::String(a/result->dry->sampleRate,3),false);safe->selectionTo.setText(juce::String(b/result->dry->sampleRate,3),false);
 
                 const auto& c=result->comparison;safe->metrics.setText(c.valid?"Selected RMS | dry "+juce::String(20*std::log10(juce::jmax(1e-12,c.dryRms)),1)+" dBFS | wet "+juce::String(20*std::log10(juce::jmax(1e-12,c.wetRms)),1)+" dBFS | frozen match "+juce::String(20*std::log10(c.gain),2)+" dB"+(c.gainCapped?" (capped)":"")+" | delay "+juce::String(result->latency)+" samples (tail excluded) | ingress clamps "+juce::String((juce::int64)result->ingressClamps):"Comparison unavailable: passage is silent or invalid.",juce::dontSendNotification);
 
@@ -618,9 +689,9 @@ private:
 
     }
 
-    void setSelection(double a,double b){assistantSessionChanged();if(!source)return;scope.first=juce::jlimit(0.0,0.999999,a);scope.last=juce::jlimit(scope.first+1.0/source->frames(),1.0,b);markRecovery();requestRender();}
+    void setSelection(double a,double b){assistantSessionChanged();if(!source)return;scope.first=juce::jlimit(0.0,0.999999,a);scope.last=juce::jlimit(scope.first+1.0/sourceFrameCount(),1.0,b);markRecovery();requestRender();}
 
-    void setSelectionSeconds(){if(!source)return;auto seconds=source->frames()/source->sampleRate;auto a=selectionFrom.getText().getDoubleValue(),b=selectionTo.getText().getDoubleValue();if(a<0||b<=a||b>seconds){setStatus("Selection needs a start before its end, inside the source duration.");return;}setSelection(a/seconds,b/seconds);}
+    void setSelectionSeconds(){if(!source)return;auto seconds=sourceFrameCount()/sourceSampleRate();auto a=selectionFrom.getText().getDoubleValue(),b=selectionTo.getText().getDoubleValue();if(a<0||b<=a||b>seconds){setStatus("Selection needs a start before its end, inside the source duration.");return;}setSelection(a/seconds,b/seconds);}
 
     void showDevices(){
 
@@ -636,9 +707,11 @@ private:
 
     void setLive(bool enabled){
         assistantSessionChanged();
+        if(enabled)retireFilePlayback();
         playing=false;
         if(captureWorker&&!captureFinalizing){recording=false;finishCapture();}
         if(enabled){
+            retireFilePlayback();
             auto* d=devices.getCurrentAudioDevice();
             if(!d||d->getActiveInputChannels().countNumberOfSetBits()==0){live.setToggleState(false,juce::dontSendNotification);showDevices();setStatus("Select an input in Audio devices, then explicitly enable monitoring. Use headphones.");return;}
             std::string error;if(!tonescope::validate(parameters(),deviceRate.load(),error)){live.setToggleState(false,juce::dontSendNotification);setStatus("Device rate cannot use current controls: "+juce::String(error));return;}
@@ -737,7 +810,7 @@ private:
         constexpr std::array<std::array<int,3>,6> orders{{{0,1,2},{2,1,0},{1,0,2},{0,2,1},{1,2,0},{2,0,1}}};for(size_t i=0;i<orders.size();++i)if(orders[i]==p.order)order.setSelectedId((int)i+1,juce::dontSendNotification);
     }
     bool applyParameterTransaction(const tonescope::Parameters& p){
-        std::string error;if(!tonescope::validate(p,source?source->sampleRate:deviceRate.load(),error)){setStatus("Parameter patch rejected: "+juce::String(error));return false;}
+        std::string error;if(!tonescope::validate(p,source?sourceSampleRate():deviceRate.load(),error)){setStatus("Parameter patch rejected: "+juce::String(error));return false;}
         const auto before=parameters();bool topology=before.order!=p.order||before.compressor!=p.compressor||before.equalizer!=p.equalizer||before.drive!=p.drive||before.oversampling!=p.oversampling||before.multiband!=p.multiband||before.crossoverLowHz!=p.crossoverLowHz||before.crossoverHighHz!=p.crossoverHighHz;
         writeParameterControls(p);parametersChanged(topology);return true;
     }
@@ -745,27 +818,38 @@ private:
     void redoParameters(){tonescope::Parameters p;if(history.redo(p)){restoringParameters=true;applyParameterTransaction(p);restoringParameters=false;setStatus("Redid parameter transaction.");}else setStatus("No parameter change to redo.");}
 
 
-    void exportAudio(){
+    void exportAudio(bool selectedOnly=false){
 
         if(!rendered||renderedRevision!=revision||busy||monitoring){setStatus("Stop live monitoring and wait for a current file render before exporting.");return;}
 
-        chooser=std::make_unique<juce::FileChooser>("Export processed WAV and evidence",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("tonescope-wet.wav"),"*.wav");auto safe=juce::Component::SafePointer<Main>(this);auto audio=rendered;auto state=session();
+        chooser=std::make_unique<juce::FileChooser>("Export processed WAV and evidence",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("tonescope-wet.wav"),"*.wav");auto safe=juce::Component::SafePointer<Main>(this);auto audio=rendered;auto state=session();auto operationCancel=std::make_shared<std::atomic<bool>>(false);exportCancel=operationCancel;const auto streamed=streamedSource;auto original=sourceFile;auto digest=sourceDigest;auto p=parameters();const auto begin=selectedOnly?selectionStart.load():0;const auto end=selectedOnly?selectionEnd.load():sourceFrameCount();
 
-        chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe,audio,state](const juce::FileChooser& f){if(!safe||f.getResult()==juce::File{})return;auto file=f.getResult();auto evidencePath=file.withFileExtension("evidence.json");if(evidencePath.exists()||evidencePath==safe->sourceFile){safe->setStatus("Evidence sidecar exists. Choose a new export name to preserve it.");return;}if(file==safe->sourceFile){safe->setStatus("Choose an export path different from the dry source.");return;}safe->setStatus("Exporting processed audio and comparison evidence...");safe->pool.addJob(new Job([safe,audio,state,file]{try{
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe,audio,state,streamed,original,digest,p,begin,end,operationCancel](const juce::FileChooser& f){if(!safe||f.getResult()==juce::File{})return;auto file=f.getResult();auto evidencePath=file.withFileExtension("evidence.json");if(evidencePath.exists()||evidencePath==safe->sourceFile){safe->setStatus("Evidence sidecar exists. Choose a new export name to preserve it.");return;}if(file==safe->sourceFile){safe->setStatus("Choose an export path different from the dry source.");return;}safe->setStatus("Exporting processed audio and comparison evidence...");safe->pool.addJob(new Job([safe,audio,state,file,streamed,original,digest,p,begin,end,operationCancel]{try{
 
-                juce::TemporaryFile temp(file);tonescope::writeWav(temp.getFile().getFullPathName().toStdString(),*audio->exportWet);if(!temp.overwriteTargetFileWithTemporary())throw std::runtime_error("Could not replace output WAV.");
+                juce::TemporaryFile temp(file);
+                if(streamed){if(hashSource(original,operationCancel)!=digest)throw std::runtime_error("Source changed before streamed export");tonescope::desktop::exportFileRange(original.getFullPathName().toStdString(),temp.getFile().getFullPathName().toStdString(),p,begin,end,operationCancel);if(hashSource(original,operationCancel)!=digest)throw std::runtime_error("Source changed during streamed export");}
+                else if(begin==0&&end==audio->exportWet->frames())tonescope::writeWav(temp.getFile().getFullPathName().toStdString(),*audio->exportWet);
+                else{tonescope::AudioData slice;slice.sampleRate=audio->exportWet->sampleRate;for(const auto& channel:audio->exportWet->samples)slice.samples.emplace_back(channel.begin()+begin,channel.begin()+end);tonescope::writeWav(temp.getFile().getFullPathName().toStdString(),slice);}
+                if(!temp.overwriteTargetFileWithTemporary())throw std::runtime_error("Could not replace output WAV.");
 
-                auto* evidence=new juce::DynamicObject();evidence->setProperty("schema_version",1);evidence->setProperty("session",state);evidence->setProperty("source_rate_hz",audio->dry->sampleRate);evidence->setProperty("frames",(juce::int64)audio->dry->frames());evidence->setProperty("latency_samples",audio->latency);evidence->setProperty("rms_valid",audio->comparison.valid);evidence->setProperty("dry_rms",audio->comparison.dryRms);evidence->setProperty("wet_rms",audio->comparison.wetRms);evidence->setProperty("frozen_match_gain",audio->comparison.gain);evidence->setProperty("residual_rms",audio->comparison.residualRms);evidence->setProperty("export_semantics","Full-source float32 engine-output timeline; audition band filters, monitor RMS match, boundary fades and safety guard are excluded.");
+                auto* evidence=new juce::DynamicObject();evidence->setProperty("schema_version",1);evidence->setProperty("session",state);evidence->setProperty("source_rate_hz",audio->dry->sampleRate);evidence->setProperty("frames",(juce::int64)(end-begin));evidence->setProperty("export_start_sample",(juce::int64)begin);evidence->setProperty("export_end_sample",(juce::int64)end);evidence->setProperty("latency_samples",audio->latency);evidence->setProperty("rms_valid",audio->comparison.valid);evidence->setProperty("dry_rms",audio->comparison.dryRms);evidence->setProperty("wet_rms",audio->comparison.wetRms);evidence->setProperty("frozen_match_gain",audio->comparison.gain);evidence->setProperty("residual_rms",audio->comparison.residualRms);evidence->setProperty("export_semantics","Float32 raw processed engine-output interval specified by export_start_sample/export_end_sample; audition band filters, monitor RMS match, boundary fades and safety guard are excluded.");
 
                 evidence->setProperty("comparison_band",state["ui"]["band"]);evidence->setProperty("comparison_alignment_samples",audio->latency);evidence->setProperty("comparison_filters","Identical branch audition filters at saved crossover frequencies; excluded from exported audio.");
                 if(!file.withFileExtension("evidence.json").replaceWithText(juce::JSON::toString(juce::var(evidence))))throw std::runtime_error("WAV saved but evidence sidecar failed.");
 
-                juce::MessageManager::callAsync([safe,file]{if(safe)safe->setStatus("Exported "+file.getFileName()+" and evidence JSON. Full source, raw processed gain.");});
+                juce::MessageManager::callAsync([safe,file]{if(safe)safe->setStatus("Exported "+file.getFileName()+" and evidence JSON. Raw processed gain on the recorded export interval.");});
 
             }catch(const std::exception& e){auto message=juce::String(e.what());juce::MessageManager::callAsync([safe,message]{if(safe)safe->setStatus("Export failed: "+message);});}}),true);});
 
     }
 
+#if __has_include("MicroscopeIntegration.inc")
+    #include "MicroscopeIntegration.inc"
+#else
+    juce::var microscopeSnapshot()const{return {};}
+    void microscopeCommand(const juce::String&,const juce::var&){}
+    void updateMicroscope(){}
+#endif
 #if __has_include("AssistantIntegration.inc")
     #include "AssistantIntegration.inc"
 #else
@@ -792,10 +876,11 @@ public:
 #if JUCE_WINDOWS
         if(args.contains("--web-ui-test")){auto debug=args.indexOf("--web-debug-port");if(debug>=0&&debug+1<args.size()&&args[debug+1].containsOnly("0123456789")){int port=args[debug+1].getIntValue();if(port>=1024&&port<=65535){auto flags="--remote-debugging-address=127.0.0.1 --remote-debugging-port="+juce::String(port);_putenv_s("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",flags.toRawUTF8());}}}
 #endif
-        window=std::make_unique<Window>(!args.contains("--screenshot")&&!args.contains("--web-ui-test"));
+        window=std::make_unique<Window>(!args.contains("--screenshot")&&!args.contains("--web-ui-test"),!args.contains("--screenshot"));
 
         if(args.contains("--demo"))static_cast<Main*>(window->getContentComponent())->loadSyntheticDemo();
 
+        if(auto sourceIndex=args.indexOf("--source");sourceIndex>=0){juce::File file;if(sourceIndex+1<args.size()&&juce::File::isAbsolutePath(args[sourceIndex+1].unquoted()))file=juce::File(args[sourceIndex+1].unquoted());static_cast<Main*>(window->getContentComponent())->loadStartupSource(file);}
         auto index=args.indexOf("--screenshot");
 
         if(index>=0&&index+1<args.size()&&juce::File::isAbsolutePath(args[index+1].unquoted())){
@@ -816,7 +901,7 @@ public:
 
     public:
 
-        explicit Window(bool openAudio):DocumentWindow("ToneScope | audio microscope",Palette::get().background,DocumentWindow::allButtons){setUsingNativeTitleBar(true);setContentOwned(new Main(openAudio),true);setResizable(true,true);setResizeLimits(960,720,2560,1800);centreWithSize(getWidth(),getHeight());setVisible(true);}
+        explicit Window(bool openAudio,bool useWeb):DocumentWindow("ToneScope | audio microscope",Palette::get().background,DocumentWindow::allButtons){setUsingNativeTitleBar(true);setContentOwned(new Main(openAudio,useWeb),true);setResizable(true,true);setResizeLimits(960,720,2560,1800);centreWithSize(getWidth(),getHeight());setVisible(true);}
 
         void closeButtonPressed() override {juce::JUCEApplication::getInstance()->systemRequestedQuit();}
 
