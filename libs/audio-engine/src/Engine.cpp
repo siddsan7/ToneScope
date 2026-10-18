@@ -65,8 +65,12 @@ struct Engine::Impl {
 };
 Engine::Engine():impl(new Impl) {} Engine::~Engine(){delete impl;}
 void Engine::prepare(double sr,int channels) {
+ prepare(sr,channels,impl->p);
+}
+void Engine::prepare(double sr,int channels,const Parameters& initial) {
  std::string error;
- if(channels<1||channels>2||!validate(impl->p,sr,error))throw std::invalid_argument("invalid preparation: "+error);
+ if(channels<1||channels>2||!validate(initial,sr,error))throw std::invalid_argument("invalid preparation: "+error);
+ impl->p=initial;impl->target=values(initial);
  impl->sr=sr;impl->channels=channels;impl->smooth=std::exp(-1/(.015*sr));
  impl->shaper.init(static_cast<int>(sr));reset();
 }

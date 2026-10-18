@@ -91,6 +91,8 @@ void microscopeTests() {
  p={};p.crossoverHighHz=300;require(!validate(p,48000,error),"crossover minimum octave spacing");
 }
 int main(){try {
+ AudioData lowRate;lowRate.sampleRate=8000;lowRate.samples={{.125f,.25f,-.5f}};Parameters lowParams;lowParams.toneHz=3200;require(render(lowRate,lowParams).samples==lowRate.samples,"explicit valid low-rate configuration prepares without default-frequency rejection");
+
  microscopeTests();
  Parameters p;std::string error;require(validate(p,48000,error),"defaults valid");p.ratio=std::numeric_limits<float>::quiet_NaN();require(!validate(p,48000,error),"NaN rejected");p={};p.order={0,0,2};require(!validate(p,48000,error),"duplicate stage rejected");p={};p.midHz=20000;require(!validate(p,44100,error),"Nyquist parameter rejected");
  auto a=sine();p={};auto unity=render(a,p,17);require(unity.samples==a.samples,"unity identity");p.compressor=true;p.ratio=1;require(render(a,p,257).samples==a.samples,"ratio one identity");p.ratio=4;p.thresholdDb=-18;p.releaseMs=150;auto compressed=render(a,p,1);require(compressed.samples==render(a,p,257).samples,"block invariance");auto measurement=compare(a,compressed,72000,96000,false);require(measurement.valid,"compressor comparison");double gr=20*std::log10(measurement.dryRms/measurement.wetRms);require(gr>6.6&&gr<6.9,"linked RMS steady compressor oracle");require(compressed.samples[0][90001]==-compressed.samples[1][90001],"stereo link preserves polarity");
