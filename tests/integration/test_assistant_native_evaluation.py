@@ -52,12 +52,20 @@ class NativeAssistantEvaluation(unittest.TestCase):
             self.assertEqual(output["usage"]["candidate_frames"],48000)
 
     def test_actual_service_rejects_forgeries_and_automatic_apply(self):
-        for scenario in ("forged-measurement","automatic-apply","stale-revision"):
+        for scenario in ("forged-measurement","automatic-apply","stale-revision","fabricated-prose"):
             with self.subTest(scenario=scenario),tempfile.TemporaryDirectory(dir=ROOT/"artifacts") as tmp:
                 output,_=self.run_probe(Path(tmp),scenario)
                 self.assertEqual(output["status"],"failed",output)
                 self.assertIsNone(output["proposal"])
                 self.assertIsNone(output["preview"])
+
+    def test_silence_abstains_without_candidate(self):
+        with tempfile.TemporaryDirectory(dir=ROOT/"artifacts") as tmp:
+            output,_=self.run_probe(Path(tmp),"silence",amplitude=0)
+            self.assertEqual(output["status"],"abstain",output)
+            self.assertIsNone(output["preview"])
+            self.assertIsNone(output["proposal"])
+            self.assertEqual(output["usage"]["candidate_frames"],0)
 
 
 if __name__=="__main__":unittest.main()
