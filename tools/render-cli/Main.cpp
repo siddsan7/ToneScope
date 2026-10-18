@@ -2,6 +2,9 @@
 #include <juce_cryptography/juce_cryptography.h>
 #include <tonescope/Engine.h>
 #include <tonescope/Session.h>
+#include <tonescope/ParameterState.h>
+#include <tonescope/Streaming.h>
+#include <tonescope/Publication.h>
 #include <cmath>
 #include <iostream>
 #include <map>
@@ -45,9 +48,9 @@ int main(int argc, char** argv) {
         std::string command=argv[1];
         std::map<std::string,std::string> args;
         std::set<std::string> allowed;
-        if(command=="render") allowed={"--source","--out","--session","--block-size","--overwrite"};
+        if(command=="render") allowed={"--source","--out","--session","--block-size","--overwrite","--start","--end"};
         else if(command=="inspect") allowed={"--source"};
-        else if(command=="compare") allowed={"--dry","--wet","--start","--end","--match"};
+        else if(command=="compare") allowed={"--dry","--wet","--start","--end","--match","--latency-samples"};
         else throw std::runtime_error("Unknown command");
         for(int i=2;i<argc;++i) {
             std::string key=argv[i];
@@ -58,16 +61,21 @@ int main(int argc, char** argv) {
         auto required=[&](const char* key) { if(!args.contains(key)) throw std::runtime_error(std::string("Missing ")+key); return args.at(key); };
         if(command=="compare") {
             auto dry=readWav(required("--dry")), wet=readWav(required("--wet"));
-            auto c=compare(dry,wet,integer(args,"--start",0),integer(args,"--end",int(dry.frames())),args.contains("--match"));
-            print(object({{"valid",c.valid},{"dryRms",c.dryRms},{"wetRms",c.wetRms},{"gain",c.gain},{"residualRms",c.residualRms},{"peak",c.peak},{"gainCapped",c.gainCapped}}));
+            auto latency=integer(args,"--latency-samples",0);
+            auto start=integer(args,"--start",0),end=integer(args,"--end",int(std::min(dry.frames(),wet.frames()-latency)));
+            auto c=compareAligned(dry,wet,start,end,args.contains("--match"),latency);
+            print(object({{"valid",c.valid},{"dryRms",c.dryRms},{"wetRms",c.wetRms},{"gain",c.gain},{"residualRms",c.residualRms},{"peak",c.peak},{"gainCapped",c.gainCapped},{"selection_start",start},{"selection_end",end},{"latency_samples",latency}}));
         } else {
             File source=File::getCurrentWorkingDirectory().getChildFile(String::fromUTF8(required("--source").c_str()));
             const auto sourceHash=hashFile(source);
-            auto audio=readWav(source.getFullPathName().toStdString());
+            WavStreamReader reader(source.getFullPathName().toStdString());
+            const auto info=reader.info();
             if(command=="inspect") {
-                double energy=0,peak=0; size_t count=0;
-                for(const auto& channel:audio.samples) for(float sample:channel) { energy+=double(sample)*sample; peak=std::max(peak,std::abs(double(sample))); ++count; }
-                print(object({{"frames",int64(audio.frames())},{"channels",int(audio.samples.size())},{"sample_rate_hz",audio.sampleRate},{"rms",count?std::sqrt(energy/count):0},{"peak",peak}}));
+                double energy=0,peak=0; std::uint64_t count=0;
+                std::array<std::array<float,1024>,2> scratch{};float* channels[]{scratch[0].data(),scratch[1].data()};
+                while(auto frames=reader.read(channels,1024)) for(int c=0;c<info.channels;++c) for(int n=0;n<frames;++n) {auto sample=scratch[c][n];energy+=double(sample)*sample;peak=std::max(peak,std::abs(double(sample)));++count;}
+                if(hashFile(source)!=sourceHash)throw std::runtime_error("Source changed during inspection");
+                print(object({{"frames",int64(info.frames)},{"channels",info.channels},{"sample_rate_hz",info.sampleRate},{"rms",count?std::sqrt(energy/count):0},{"peak",peak}}));
             } else {
                 auto p=args.contains("--session")?loadParameters(File::getCurrentWorkingDirectory().getChildFile(String::fromUTF8(args.at("--session").c_str()))):Parameters{};
                 if(args.contains("--session")) {
@@ -75,25 +83,38 @@ int main(int argc, char** argv) {
                     if(auto digest=saved["source_sha256"]; !digest.isVoid() && digest.toString()!=sourceHash) throw std::runtime_error("Session source digest differs from supplied source");
                 }
                 std::string error;
-                if(!validate(p,audio.sampleRate,error)) throw std::runtime_error(error);
+                if(!validate(p,info.sampleRate,error)) throw std::runtime_error(error);
                 int block=integer(args,"--block-size",257);
                 if(block<1 || block>65536) throw std::runtime_error("Block size must be 1..65536");
                 File out=File::getCurrentWorkingDirectory().getChildFile(String::fromUTF8(required("--out").c_str()));
                 const auto sidecar=out.getSiblingFile(out.getFileName()+".json");
                 if(out==source || sidecar==source) throw std::runtime_error("Output must differ from source");
+                session::PublicationReservation publication(out,sidecar);
                 if((out.exists() || sidecar.exists()) && !args.contains("--overwrite")) throw std::runtime_error("Output or manifest exists; select another path or --overwrite");
-                auto rendered=render(audio,p,block);
+                const auto first=integer(args,"--start",0),last=integer(args,"--end",static_cast<int>(info.frames));
+                if(first>=last||last>info.frames)throw std::runtime_error("Selection must be a nonempty source-sample interval");
+                Engine engine;engine.prepare(info.sampleRate,info.channels,p);
+                const int latency=engine.latencySamples();
+                const int alignment=(args.contains("--start")||args.contains("--end"))?latency:0;
+                const auto processingEnd=std::int64_t(last)+alignment;
+                std::array<std::vector<float>,2> input,output;
+                const float* in[2]{};float* read[2]{},*dest[2]{};
+                for(int c=0;c<info.channels;++c){input[c].resize(block);output[c].resize(block);in[c]=input[c].data();read[c]=input[c].data();dest[c]=output[c].data();}
                 // Publish only a complete asset; a failed write leaves the destination intact.
                 TemporaryFile temporary(out);
-                writeWav(temporary.getFile().getFullPathName().toStdString(),rendered);
+                WavStreamWriter writer(temporary.getFile().getFullPathName().toStdString(),info.sampleRate,info.channels);
+                for(std::int64_t at=0;at<processingEnd;at+=block) {
+                    int frames=static_cast<int>(std::min<std::int64_t>(block,processingEnd-at));
+                    reader.read(read,frames);engine.process(in,dest,frames);
+                    auto begin=std::max<std::int64_t>(first+alignment,at),end=std::min<std::int64_t>(last+alignment,at+frames);
+                    if(end>begin){const float* selected[2]{};for(int c=0;c<info.channels;++c)selected[c]=dest[c]+(begin-at);writer.write(selected,static_cast<int>(end-begin));}
+                }
+                writer.finish();
                 if(hashFile(source)!=sourceHash) throw std::runtime_error("Source changed during render; retry from a stable file");
-                if(!temporary.overwriteTargetFileWithTemporary()) throw std::runtime_error("Atomic output publication failed");
-                auto graph=object({{"inputDb",p.inputDb},{"thresholdDb",p.thresholdDb},{"ratio",p.ratio},{"attackMs",p.attackMs},{"releaseMs",p.releaseMs},{"kneeDb",p.kneeDb},{"makeupDb",p.makeupDb},{"lowDb",p.lowDb},{"midDb",p.midDb},{"highDb",p.highDb},{"midHz",p.midHz},{"midQ",p.midQ},{"driveDb",p.driveDb},{"toneHz",p.toneHz},{"outputDb",p.outputDb},{"compressor",p.compressor},{"equalizer",p.equalizer},{"drive",p.drive},{"order",var(Array<var>{p.order[0],p.order[1],p.order[2]})}});
-                auto graphText=JSON::toString(graph,true);
-                auto graphHash=SHA256(graphText.toRawUTF8(),graphText.getNumBytesAsUTF8()).toHexString();
-                auto manifest=object({{"schema_version",1},{"frames",int64(rendered.frames())},{"channels",int(rendered.samples.size())},{"sample_rate_hz",rendered.sampleRate},{"source_sha256",sourceHash},{"artifact_sha256",hashFile(out)},{"graph_sha256",graphHash},{"latency_samples",0},{"quality","1x development"},{"output",out.getFullPathName()}});
+                if(!session::publishCompleteFile(temporary.getFile(),out,args.contains("--overwrite"))) throw std::runtime_error("Output publication failed or destination appeared during render");
+                auto manifest=object({{"schema_version",1},{"frames",last-first},{"channels",info.channels},{"sample_rate_hz",info.sampleRate},{"source_sha256",sourceHash},{"artifact_sha256",hashFile(out)},{"graph_sha256",session::hashParameters(p)},{"latency_samples",latency},{"alignment_samples",alignment},{"selection_samples",var(Array<var>{first,last})},{"processed_frames",int64(processingEnd)},{"oversampling",p.oversampling},{"multiband",p.multiband},{"export_timeline",alignment?"source-aligned":"engine-output"},{"output",out.getFullPathName()}});
                 TemporaryFile manifestTemp(sidecar);
-                if(!manifestTemp.getFile().replaceWithText(JSON::toString(manifest)) || !manifestTemp.overwriteTargetFileWithTemporary()) throw std::runtime_error("Audio complete but manifest write failed");
+                if(!manifestTemp.getFile().replaceWithText(JSON::toString(manifest)) || !session::publishCompleteFile(manifestTemp.getFile(),sidecar,args.contains("--overwrite"))) throw std::runtime_error("Audio complete but manifest publication failed or destination appeared");
                 print(manifest);
             }
         }

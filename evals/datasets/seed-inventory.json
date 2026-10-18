@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "version": "seed-regression-v1",
+  "holdout_qualified": false,
+  "reason": "Inspected regression fixtures; final sequestered holdout and licensed DI unavailable",
+  "items": [
+    {
+      "id": "measured-harshness",
+      "parent_group": "measured-harshness",
+      "split": "development",
+      "sha256": "ac177c94d7c7bea6321650395678976ae3395a1fb2ef950d6016e9bdad70280a",
+      "duplicate_signature": "ac177c94d7c7bea6321650395678976ae3395a1fb2ef950d6016e9bdad70280a",
+      "license": "CC0 synthetic protocol fixture"
+    },
+    {
+      "id": "target-already-met",
+      "parent_group": "target-already-met",
+      "split": "validation",
+      "sha256": "462f49c4807e5fc455797933a11917d1ca5f72ee9fa8a8ae7e3bf6f6dac013b4",
+      "duplicate_signature": "462f49c4807e5fc455797933a11917d1ca5f72ee9fa8a8ae7e3bf6f6dac013b4",
+      "license": "CC0 synthetic protocol fixture"
+    },
+    {
+      "id": "missing-source",
+      "parent_group": "missing-source",
+      "split": "development",
+      "sha256": "adb54437a0dc6f7e730aa77509b621b42038581fb52873a74e3922ea7d2a8679",
+      "duplicate_signature": "adb54437a0dc6f7e730aa77509b621b42038581fb52873a74e3922ea7d2a8679",
+      "license": "CC0 synthetic protocol fixture"
+    },
+    {
+      "id": "ambiguous-request",
+      "parent_group": "ambiguous-request",
+      "split": "validation",
+      "sha256": "809c5db5ddbdf43042da810f19b61b5269ecad6abcb2fa04b6595aa96e1ea7dc",
+      "duplicate_signature": "809c5db5ddbdf43042da810f19b61b5269ecad6abcb2fa04b6595aa96e1ea7dc",
+      "license": "CC0 synthetic protocol fixture"
+    },
+    {
+      "id": "infeasible-constraints",
+      "parent_group": "infeasible-constraints",
+      "split": "development",
+      "sha256": "96beca1241a4bc010207290d20b073c12c76784974e89f8b1b4adf3a4922e916",
+      "duplicate_signature": "96beca1241a4bc010207290d20b073c12c76784974e89f8b1b4adf3a4922e916",
+      "license": "CC0 synthetic protocol fixture"
+    },
+    {
+      "id": "invalid-measurement",
+      "parent_group": "invalid-measurement",
+      "split": "validation",
+      "sha256": "493489aeb017bcda0bb826ad32403b8487600dd2592303f2382c137a7358790b",
+      "duplicate_signature": "493489aeb017bcda0bb826ad32403b8487600dd2592303f2382c137a7358790b",
+      "license": "CC0 synthetic protocol fixture"
+    },
+    {
+      "id": "stale-tool-state",
+      "parent_group": "stale-tool-state",
+      "split": "development",
+      "sha256": "840fee4e05e3be3dd3764efa24b2ae121c72d38d7463fcc820f903a0c3411f92",
+      "duplicate_signature": "840fee4e05e3be3dd3764efa24b2ae121c72d38d7463fcc820f903a0c3411f92",
+      "license": "CC0 synthetic protocol fixture"
+    },
+    {
+      "id": "tool-timeout",
+      "parent_group": "tool-timeout",
+      "split": "development",
+      "sha256": "bc8884f22b5a258a3a061295da5dcd3fd78ffbf70546d8a314e4184d1d80d450",
+      "duplicate_signature": "bc8884f22b5a258a3a061295da5dcd3fd78ffbf70546d8a314e4184d1d80d450",
+      "license": "CC0 synthetic protocol fixture"
+    },
+    {
+      "id": "rate-limit",
+      "parent_group": "rate-limit",
+      "split": "locked-test",
+      "sha256": "65a099bf445c713c3d7622773dc11263cfdb6815cbe736d978c006694680f131",
+      "duplicate_signature": "65a099bf445c713c3d7622773dc11263cfdb6815cbe736d978c006694680f131",
+      "license": "CC0 synthetic protocol fixture"
+    },
+    {
+      "id": "metadata-injection",
+      "parent_group": "metadata-injection",
+      "split": "validation",
+      "sha256": "3adcf3b495592b30100b75013c118807f43f8e22698f9bb10c21034fe91c4d9e",
+      "duplicate_signature": "3adcf3b495592b30100b75013c118807f43f8e22698f9bb10c21034fe91c4d9e",
+      "license": "CC0 synthetic protocol fixture"
+    },
+    {
+      "id": "filename-path-injection",
+      "parent_group": "filename-path-injection",
+      "split": "validation",
+      "sha256": "112b701681c77c1803446f35b6234b39c70c44c273677a4d152dd25bf50217ce",
+      "duplicate_signature": "112b701681c77c1803446f35b6234b39c70c44c273677a4d152dd25bf50217ce",
+      "license": "CC0 synthetic protocol fixture"
+    },
+    {
+      "id": "tool-result-key-exfiltration",
+      "parent_group": "tool-result-key-exfiltration",
+      "split": "locked-test",
+      "sha256": "f8c0d65e8d1a2373a6d5a321014fa0130ee7911e1753a5a431c924e35c67903d",
+      "duplicate_signature": "f8c0d65e8d1a2373a6d5a321014fa0130ee7911e1753a5a431c924e35c67903d",
+      "license": "CC0 synthetic protocol fixture"
+    },
+    {
+      "id": "synthetic-impulse-original",
+      "parent_group": "synthetic-impulse",
+      "split": "development",
+      "sha256": "d20ef2ef84aa0bea6b9b58aa6084eb078e163737cee6feeeb11f1c1f794d7fb7",
+      "duplicate_signature": "27b2af3543af68f40c09dbb7f9b5b02df325f374c2c00f435e57829786d693b0",
+      "license": "CC0 deterministic synthetic"
+    },
+    {
+      "id": "synthetic-impulse-gain-half",
+      "parent_group": "synthetic-impulse",
+      "split": "development",
+      "sha256": "1af20f05fae259c6842a6f20d574ff477306119437b790385881111c07b4b833",
+      "duplicate_signature": "27b2af3543af68f40c09dbb7f9b5b02df325f374c2c00f435e57829786d693b0",
+      "license": "CC0 deterministic synthetic"
+    },
+    {
+      "id": "synthetic-step-original",
+      "parent_group": "synthetic-step",
+      "split": "development",
+      "sha256": "e8de35895ab75b7b0b75219d8d40052fc1c4cf55796434f39834ec3a194f3cdc",
+      "duplicate_signature": "766f41d3c4a2a2b0c8209644f5d1b108e37fd4e1b2f3ac91bfaa5462fd65a6ae",
+      "license": "CC0 deterministic synthetic"
+    },
+    {
+      "id": "synthetic-step-gain-half",
+      "parent_group": "synthetic-step",
+      "split": "development",
+      "sha256": "736e76cc622b8499fbb7bec6d9a427414c72556bb28a36992b340ab3bddbaa56",
+      "duplicate_signature": "766f41d3c4a2a2b0c8209644f5d1b108e37fd4e1b2f3ac91bfaa5462fd65a6ae",
+      "license": "CC0 deterministic synthetic"
+    },
+    {
+      "id": "synthetic-noise-original",
+      "parent_group": "synthetic-noise",
+      "split": "validation",
+      "sha256": "4dfb75daf9b01dd9d2e25bd1f66622244e7993a4c851c0a6fb35aa060fdc8808",
+      "duplicate_signature": "f95fc873e2030ba334447b913235b681190a4a6bad9078c7404f9806c962070c",
+      "license": "CC0 deterministic synthetic"
+    },
+    {
+      "id": "synthetic-noise-gain-half",
+      "parent_group": "synthetic-noise",
+      "split": "validation",
+      "sha256": "917d29f392ae28146094c3a349601db709f63f145ee2d0519f78b213f1e7b7a2",
+      "duplicate_signature": "f95fc873e2030ba334447b913235b681190a4a6bad9078c7404f9806c962070c",
+      "license": "CC0 deterministic synthetic"
+    },
+    {
+      "id": "synthetic-sweep-original",
+      "parent_group": "synthetic-sweep",
+      "split": "development",
+      "sha256": "8b4cd4196387b344d328aeebf36f9854c2a27785da4b5885c09142c61d3c6e24",
+      "duplicate_signature": "7a874e64692b082267fcea6a88b624a67f4a813c1a84f91c87dd1d2fcb79994b",
+      "license": "CC0 deterministic synthetic"
+    },
+    {
+      "id": "synthetic-sweep-gain-half",
+      "parent_group": "synthetic-sweep",
+      "split": "development",
+      "sha256": "663dc9a983c78a05b01a2df16b7c56676f202d12f24d8b7f0182a746bd0feef3",
+      "duplicate_signature": "7a874e64692b082267fcea6a88b624a67f4a813c1a84f91c87dd1d2fcb79994b",
+      "license": "CC0 deterministic synthetic"
+    }
+  ]
+}

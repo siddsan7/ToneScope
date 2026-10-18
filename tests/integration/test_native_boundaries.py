@@ -1,6 +1,7 @@
 """Regression checks for reviewed native boundaries; requires a built CLI."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -8,7 +9,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-CLI = ROOT / 'build/windows-dev/tonescope_cli_artefacts/Release/tonescope_cli.exe'
+CLI = Path(os.environ.get('TONESCOPE_TEST_CLI',str(ROOT / 'build/windows-dev/tonescope_cli_artefacts/Release/tonescope_cli.exe')))
 
 
 @unittest.skipUnless(CLI.is_file(), 'native CLI must be built first')

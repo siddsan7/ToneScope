@@ -110,6 +110,7 @@ class ReleaseTests(unittest.TestCase):
                     "families": ["EXPORT-ROUNDTRIP", "EXPORT-PROVENANCE"]}
             runs = []
             for suite in ("contracts", "dsp", "integration"):
+                case["suite"] = suite
                 runs.append(ref(suite + ".json", {"schema_version": 1, "suite": suite,
                     "status": "pass", "commit_sha": commit, "run_id": "fixture", "working_tree_dirty": False,
                     "cli_sha256": "b" * 64, "runner_sha256": "c" * 64, "oracle_sha256": "d" * 64,
@@ -131,7 +132,9 @@ class ReleaseTests(unittest.TestCase):
                             critical_contract_boundaries=[{"id": "fixture", "case_ids": ["TEST-ONLY"]}])
             path = base / "manifest.json"
             path.write_text(json.dumps(manifest), encoding="utf-8")
-            self.assertEqual(validate_manifest(path), [])
+            errors = validate_manifest(path)
+            for expected in ("exact checkout HEAD", "distinct evidence", "runtime files", "source identity", "frozen required cases"):
+                self.assertTrue(any(expected in e for e in errors), (expected, errors))
             suite_data = json.loads((base / "contracts.json").read_text())
             suite_data["results"][0]["measurements"] = "everything passed"
             manifest["required_suites"][0] = ref("contracts.json", suite_data)

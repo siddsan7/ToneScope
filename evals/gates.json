@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "version": "development-gates-v1",
+  "identity_max_abs": 1e-06,
+  "identity_residual_rms": 1e-05,
+  "block_max_abs": 1e-05,
+  "eq_db": 0.2,
+  "compressor_db": 0.25,
+  "compressor_timing_relative": 0.1,
+  "compressor_timing_samples": 2,
+  "crossover_db": 0.25,
+  "alias_improvement_db": 10,
+  "ai_numeric_grounding": 0.99,
+  "ai_abstention": 0.95,
+  "ai_task_success": 0.85,
+  "required_cases": {
+    "contracts": [
+      "IO-DECODE-001",
+      "IO-DECODE-ONE-FRAME",
+      "IO-MALFORMED-corrupt",
+      "IO-MALFORMED-truncated",
+      "IO-MALFORMED-huge",
+      "IO-MALFORMED-nonfinite",
+      "STATE-REJECT-version",
+      "STATE-REJECT-unknown",
+      "STATE-REJECT-ratio",
+      "STATE-PARAMETER-BOUNDARIES"
+    ],
+    "dsp": [
+      "CMP-UNITY-silence",
+      "CMP-UNITY-impulse",
+      "CMP-UNITY-noise",
+      "CMP-UNITY-multitone",
+      "DSP-BLOCK-001",
+      "DSP-GAIN-001",
+      "DSP-COMP-STATIC-001",
+      "DSP-EQ-TRANSFER-001",
+      "DSP-COMP-TIMING-001",
+      "DSP-DOMAIN-CHANNEL-001",
+      "DSP-XOVER-COMPLEX-001",
+      "DSP-ALIAS-CONVERGENCE-001"
+    ],
+    "integration": [
+      "RENDER-RESET-001",
+      "CMP-MATCH-001",
+      "CMP-SILENCE-001",
+      "EVAL-MUTATION-001",
+      "EXPORT-NOCLOBBER-AUDIO",
+      "EXPORT-NOCLOBBER-MANIFEST",
+      "CMP-DELAY-DECLARED-001"
+    ],
+    "ai-replay": [
+      "AI-PROTOCOL-BASELINES",
+      "AI-LIVE-QUALIFICATION-PENDING"
+    ],
+    "ai-live": [
+      "AI-QUALIFICATION-PENDING"
+    ]
+  },
+  "eq_complex_relative": 0.025,
+  "crossover_complex_absolute": 0.025,
+  "alias_reference_convergence_rms": 0.0001,
+  "alias_rates_hz": [
+    44100,
+    48000,
+    96000
+  ],
+  "alias_bins": [
+    683,
+    1093,
+    1531
+  ],
+  "alias_frames": 8192,
+  "alias_drive_db": 30,
+  "alias_reference_factors": [
+    2048,
+    4096
+  ],
+  "eq_rates_hz": [
+    44100,
+    48000,
+    96000
+  ],
+  "eq_bins": [
+    3,
+    17,
+    93,
+    557,
+    1100
+  ]
+}
