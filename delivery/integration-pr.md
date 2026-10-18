@@ -1,7 +1,29 @@
-ToneScope now bundles a dark React/shadcn instrument interface inside the native JUCE app while preserving the C++ audio engine. Space Grotesk and Commit Mono are bundled with their OFL licenses; Motion interactions honor reduced motion. Native commands are versioned and allowlisted, resources are packaged locally, and the WebView2 SDK is pinned by version and archive digest.
+## Problem and resulting behavior
 
-The native renderer streams validated WAV files with bounded buffers, preserves processing history for selected exports, and prevents concurrent writers from overwriting an output without explicit authorization. The optional assistant service uses authenticated loopback access, actual native candidate renders, revision/hash-bound proposals, explicit acceptance contracts, and disabled-by-default metered provider access. Independent DSP, adversarial assistant, frozen-corpus and release-evidence checks accompany these changes.
+ToneScope now runs a bundled dark React/shadcn instrument interface inside the native Windows app, preserving the C++ audio engine and offline operation. Long WAVs retain their complete source timeline while inspection and replay stay bounded. Measured dynamics and manual passage comparison feed an optional grounded assistant: native renders are independently verified, compared through frozen RMS A/B, then accepted explicitly as one undoable patch.
 
-Validation recorded during integration: 31 Python tests pass; independent publication races, history-preserving selection and malformed-input probes pass. The first actual embedded build exposed a C++ bridge compile error; the native integration fix and full embedded rerun are pending. This draft remains open until native capture/state and assistant UI integration, exact-head review and CI complete.
+## Scope and contracts
 
-This is a development feature integration. Hardware timing, licensed musical corpus, human listening/accessibility, live model quality, signing, licensing selection and clean-machine release qualification remain unperformed. Protocol fixtures are not model-quality evidence.
+TS-001–TS-016 integration following merged foundation/DSP/evaluation PRs1–3. Strict version1 session/frontend/proposal boundaries; actual generated Faust compressor/EQ/drive; persistent dry capture/recovery; full-history streaming, raw exports and exclusive publication. Fonts Space Grotesk/Commit Mono are bundled with OFL notices; Radix/shadcn and Motion support numeric input, reduced motion, forced colors and200% text. Native commands remain allowlisted and browser resources local.
+
+The authenticated local broker has bounded tools, concurrent admission, lifetime replay/deletion metadata, history/asset retention and separate currency accounting. Native baseline storage is fixed, cancellation overflows fail closed, and session rotation is synchronized. Dormant provider access requires explicit model/pricing/consent/budget. No paid model calls or automatic parameter application occurred.
+
+Private development packaging includes source/build identities, broker bundle, retained notices/hashes, versioned install/rollback/uninstall and redacted diagnostics. Opt-in callback observations remain host software telemetry, with a dedicated atomic report writer and documented scope.
+
+## Evidence
+
+Exact-head GitHub Windows/native and Linux ASan/UBSan checks are authoritative. The Windows job builds the real embedded app, starts the native fallback without hardware, runs native/Python/service/frontend regressions, real product-source smoothing/schema/tool mutations, numerical/contract/integration suites, and packaging/install checks. Failures upload artifacts; nightly retains90days.
+
+Actual local embedded WebView2 probes exercised native parameter validation/undo, fonts, text/media settings, soft/hard measurements and GR, Ask/preview/current-settings/candidate/frozen-match/explicit-Apply/one-Undo/history deletion. A separate121-second fixture proved bounded late-window inspection beyond120seconds and source-position-preserving rerender. Synthetic signals are functional evidence, not a licensed listening corpus.
+
+Independent agent review found and fixed the actual versioned A/B payload mismatch, report/session validator mismatch, stale development replay acceptance, unbounded metadata/baseline caches and session rotation race. Earlier compiler/path/publication/installer failures are retained; numerical gates were not relaxed. Final local artifacts are under `artifacts/final/`; compiled identities bind checks to actual sources and executables.
+
+AI replay deliberately retains the named live-qualification block. Its separate CI-only gate requires exact passing protocol inventory, current source/runtime/gate identity and intact evidence. No development CI result grants release qualification.
+
+## Review focus and failure behavior
+
+Audio callback ownership/no allocation or IO; history/latency/phase semantics; stale/forged evidence and explicit acceptance; cancellation/retention races; concurrent publication; installer ownership/reparse boundaries. Missing assistant runtime leaves core audio available. Audio/sidecar publication is two-step and can leave complete audio when evidence publication fails; that failure remains explicit.
+
+## Remaining limitations
+
+Unsigned private development integration. Physical device/callback/round-trip/soak, licensed musical data and independently owned holdout, human listening/Narrator/mixed-DPI, JUCE licensing/signing/clean-machine installation and explicitly authorized provider-backed model qualification remain unperformed. RMS/sample peak and numerical residuals do not imply perceptual quality, true peak or isolated distortion. Independent agent review is identified as such; no human approval is impersonated.

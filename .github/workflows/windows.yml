@@ -26,6 +26,7 @@ jobs:
       - run: npm ci --ignore-scripts
         working-directory: services/audio-assistant
       - run: ./scripts/bootstrap.ps1
+      - run: ./scripts/bootstrap-faust.ps1
       - run: ./.tools/python/cmake/data/bin/cmake.exe --preset windows-dev
       - run: cmake --build --preset windows-dev -- /m:1 /nr:false
       - run: ctest --preset windows-dev --output-on-failure

@@ -5,7 +5,7 @@ with the locked dependencies installed first. Run `pwsh scripts/package-dev.ps1`
 to create a fresh UUID staging tree and new ZIP. Inputs are explicitly listed;
 session histories, evaluation results, private manifests, environment files and
 audio are never copied. Existing ZIP outputs are refused. `manifest.json` hashes
-every delivered file except itself with SHA-256. Hashes detect accidental changes;
+every delivered file except itself with SHA-256. `build-info.json` is read from the actual packaged renderer and records its compiled source/commit/toolchain identities; it is not inferred from the packaging checkout. The local recovery runbooks are included. Hashes detect accidental changes;
 they do not authenticate an unsigned package or manifest.
 
 Extract locally and run `pwsh tools/verify-package.ps1 -PackageRoot <extracted>`.

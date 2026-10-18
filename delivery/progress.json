@@ -2,7 +2,7 @@
   "schema_version": 1,
   "product": "ToneScope",
   "version": "0.1.0-dev",
-  "overall_status": "development_integration_final_verification",
+  "overall_status": "implemented_unqualified_development",
   "production_ready": false,
   "source_state": {
     "integration_branch": "codex/delivery-orchestration",
@@ -11,11 +11,10 @@
       2,
       3
     ],
-    "open_private_prs": [
-      4
-    ],
-    "final_clean_head_evidence_pending": true,
-    "public_release": false
+    "public_release": false,
+    "integration_pr": 4,
+    "integration_pr_status": "Authoritative live review/check/merge state: https://github.com/siddsan7/ToneScope/pull/4",
+    "final_evidence_directory": "artifacts/final/"
   },
   "requirements": {
     "TS-001": {
@@ -184,7 +183,8 @@
         "Independent numerical oracles and mutation tests",
         "Frozen grouped regression corpus; no false holdout claim",
         "Adversarial real native assistant tests and fail-closed release evidence",
-        "Compiled source identity and Windows/Linux sanitizer CI"
+        "Compiled source identity and Windows/Linux sanitizer CI",
+        "Actual product-source smoothing, session-version and tool-authorization mutation campaigns; source-bound protocol-only CI checker"
       ],
       "remaining": [
         "Hardware, human, licensed/sequestered corpus and live-model qualification"
@@ -192,24 +192,26 @@
     }
   },
   "verification": {
-    "scope": "Software implementation integrated; final clean-head build, mutation campaigns, independent review and CI in progress",
+    "scope": "Implemented software; exact clean-build identities and final results belong in artifacts/final/ and exact-head GitHub checks. Prior local runs below are explicitly intermediate.",
     "native_ctest_last_pass": {
-      "pass": 5,
+      "pass": 7,
       "fail": 0,
-      "log": ".tools/profile-ctest.log",
-      "scope": "Intermediate integrated build; final clean commit rerun required"
+      "log": ".tools/final-ctest-initial.log",
+      "scope": "Intermediate integrated native executables; final clean-head rerun recorded separately"
     },
     "python_last_pass": {
-      "pass": 32,
+      "pass": 34,
       "fail": 0,
       "skipped": 0,
-      "log": ".tools/provenance-python-required.log"
+      "log": ".tools/final-python-initial.log",
+      "scope": "Intermediate integrated checkout; final clean-head rerun recorded separately"
     },
     "assistant_last_pass": {
-      "pass": 19,
+      "pass": 24,
       "fail": 0,
       "skipped": 0,
-      "log": ".tools/assistant-integrated-tests-network.log"
+      "log": "artifacts/integration-review/final-9c419bb-approval.md",
+      "scope": "Independent agent actual-CLI rerun"
     },
     "frontend_last_pass": {
       "pass": 5,
@@ -222,9 +224,15 @@
     },
     "embedded_native_probe": "artifacts/frontend-native/probe.json",
     "accessibility_software": "artifacts/frontend-native/accessibility-software.json",
-    "portable_sanitizers_ci": "Passed on PR4 initial head; rerun on final integration required",
+    "portable_sanitizers_ci": "PR4 exact-head portable-sanitizers check; current status on GitHub",
     "long_file_embedded_probe": ".worktrees/native-state/artifacts/frontend-native-long-file/probe.json",
-    "callback_probe": "docs/transport/callback-probe-benchmark.json (host microbenchmark only)"
+    "callback_probe": "docs/transport/callback-probe-benchmark.json (host microbenchmark only)",
+    "product_mutations": {
+      "smoothing": "artifacts/final/smoothing-mutation/result.json",
+      "session_version": "artifacts/final/schema-mutation/run.json",
+      "tool_validation": "artifacts/final/tool-mutation-current/result.json",
+      "scope": "Actual isolated product-source mutants; baseline passes and deliberate guards fail; no hardware/live-model claim"
+    }
   },
   "external_blockers": [
     "Physical interface/laptop lifecycle, timing and soak qualification",
@@ -233,17 +241,18 @@
     "Code-signing identity and clean-machine install qualification",
     "Optional provider credentials, consent and budget for live D3 evaluation"
   ],
-  "software_next": [
-    "Finish three actual product mutation campaigns and resource-limit independent review",
-    "Final clean-head native/frontend/service/evaluation gates and exact-head CI",
-    "Build/hash-verify private package and finish reviewed PR4"
-  ],
+  "software_next": [],
   "limitations": [
-    "Development integration is not production-qualified; final clean-head evidence pending",
+    "Implemented software remains unsigned and unqualified for production; physical/human/live-model release gates remain required",
     "RMS and sample peak are not perceptual loudness or true peak",
     "Integer delay compensation does not remove frequency-dependent filter phase",
     "Linear monitor resampling still needs physical/listening qualification",
     "Two-step audio/manifest publication can leave complete audio if sidecar publication fails",
     "Generated Faust and numeric-conversion MSVC warnings remain"
-  ]
+  ],
+  "delivery_gates": {
+    "review": "Independent assigned agent review, exact composition; PR4 comments and artifacts/integration-review/",
+    "ci": "Passing exact-head Windows and Linux sanitizer checks required before merge",
+    "package": "Fresh allowlist package with binary/build/dependency hashes; private unsigned development only"
+  }
 }
