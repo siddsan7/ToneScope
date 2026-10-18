@@ -25,6 +25,7 @@ export type AssistantState = {
   };
 };
 export type Snapshot = {
+  callbackProfile?: {enabled: boolean; count: number; p99_upper_ns: number | null; p999_upper_ns: number | null; observed_max_ns: number; scope_deadline_misses: number; consistent: boolean; insufficientQualificationSampleCount: boolean};
   streamedSource?: boolean;
   sourceFrames?: number;
   inspectionOffset?: number;

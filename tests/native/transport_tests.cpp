@@ -1,6 +1,7 @@
 #include "CaptureWorker.h"
 #include "FilePlayback.h"
 #include "SessionRecovery.h"
+#include "CallbackReport.h"
 #include <tonescope/ParameterState.h>
 #include <array>
 #include <cmath>
@@ -23,6 +24,9 @@ int main(){
   auto serialized=juce::JSON::toString(state);require(juce::JSON::toString(session::migrateDocument(state))==serialized,"Schema1 identity migration");
   auto sessionFile=folder.getChildFile("session.json");require(desktop::saveSessionAtomically(sessionFile,serialized),"Atomic valid session save");require(session::hashParameters(session::loadParameters(sessionFile))==session::hashParameters(b),"Session readback exact parameters");
   require(!desktop::saveSessionAtomically(sessionFile,"{\"schema_version\":99}"),"Unknown migration must reject");require(sessionFile.loadFileAsString()==serialized,"Failed replacement preserves prior complete state");
+  auto report=folder.getChildFile("callback.json");const juce::String reportJson="{\"kind\":\"tonescope.callback.observations\",\"schema_version\":1,\"count\":0,\"p99_upper_ns\":null}";
+  require(desktop::saveCallbackObservationsAtomically(report,reportJson),"Callback observations use own schema, not session validator");require(report.loadFileAsString()==reportJson,"Callback observation readback");
+  require(!desktop::saveCallbackObservationsAtomically(report,serialized)&&!desktop::saveCallbackObservationsAtomically(report,"{bad"),"Reject invalid callback report");require(report.loadFileAsString()==reportJson,"Failed callback report preserves prior file");
   for(auto bad:{"{\"schema_version\":0,\"parameters\":{}}","{\"schema_version\":2,\"parameters\":{}}","{\"schema_version\":1.0,\"parameters\":{}}","{}"})rejects([&]{session::loadParametersDocument(juce::JSON::parse(bad));});
   std::array<float,512> left{},right{};for(int i=0;i<512;++i){left[i]=float(.4*std::sin(i*.2));right[i]=-left[i];}const float* input[]{left.data(),right.data()};
   auto take=folder.getChildFile("take.wav");{

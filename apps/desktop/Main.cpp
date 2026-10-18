@@ -18,6 +18,7 @@
 #include "SessionRecovery.h"
 #include "FilePlayback.h"
 #include "CallbackProbe.h"
+#include "CallbackReport.h"
 #if __has_include("AssistantBridge.h")
 #include "AssistantBridge.h"
 #endif
@@ -404,7 +405,7 @@ private:
         const auto sample=callbackProbe.snapshot();auto* result=new juce::DynamicObject;
         auto integer=[](std::uint64_t value)->juce::var{if(value>static_cast<std::uint64_t>(std::numeric_limits<juce::int64>::max()))return juce::String(value);return static_cast<juce::int64>(value);};
         auto put=[&](const char* key,const juce::var& value){result->setProperty(key,value);};
-        put("schema_version",1);put("enabled",sample.enabled);put("consistent",sample.consistent);put("aggregate_overflow",sample.aggregateOverflow);put("count",integer(sample.count));put("elapsed_total_ns",integer(sample.totalNs));put("observed_max_ns",integer(sample.maximumNs));put("scope_deadline_misses",integer(sample.deadlineMisses));put("unknown_nominal_periods",integer(sample.unknownPeriods));put("last_nominal_period_ns",integer(sample.lastPeriodNs));put("minimum_nominal_period_ns",integer(sample.minimumPeriodNs));put("maximum_nominal_period_ns",integer(sample.maximumPeriodNs));
+        put("kind","tonescope.callback.observations");put("schema_version",1);put("enabled",sample.enabled);put("consistent",sample.consistent);put("aggregate_overflow",sample.aggregateOverflow);put("count",integer(sample.count));put("elapsed_total_ns",integer(sample.totalNs));put("observed_max_ns",integer(sample.maximumNs));put("scope_deadline_misses",integer(sample.deadlineMisses));put("unknown_nominal_periods",integer(sample.unknownPeriods));put("last_nominal_period_ns",integer(sample.lastPeriodNs));put("minimum_nominal_period_ns",integer(sample.minimumPeriodNs));put("maximum_nominal_period_ns",integer(sample.maximumPeriodNs));
         auto estimate=[&](unsigned percentile){const auto upper=sample.percentileUpperNs(percentile);return sample.count==0||upper==std::numeric_limits<std::uint64_t>::max()?juce::var{}:integer(upper);};
         put("p50_upper_ns",estimate(5000));put("p95_upper_ns",estimate(9500));put("p99_upper_ns",estimate(9900));put("p999_upper_ns",estimate(9990));put("p999_open_ended",sample.count>0&&sample.percentileUpperNs(9990)==std::numeric_limits<std::uint64_t>::max());put("insufficientQualificationSampleCount",sample.count<1000);put("qualification_minimum_callback_samples",1000);put("percentiles_are_bin_upper_estimates",true);put("p99_open_ended",sample.count>0&&sample.percentileUpperNs(9900)==std::numeric_limits<std::uint64_t>::max());
         juce::Array<juce::var> histogram;for(std::size_t i=0;i<tonescope::desktop::CallbackProbe::binCount;++i){auto* bin=new juce::DynamicObject;bin->setProperty("lower_exclusive_ns",i==0?juce::var{}:integer(tonescope::desktop::CallbackProbe::binUpperNs(i-1)));bin->setProperty("upper_inclusive_ns",i+1==tonescope::desktop::CallbackProbe::binCount?juce::var{}:integer(tonescope::desktop::CallbackProbe::binUpperNs(i)));bin->setProperty("count",integer(sample.bins[i]));histogram.add(juce::var(bin));}put("histogram",histogram);
@@ -419,6 +420,22 @@ private:
     void resetCallbackProfile(){
         if(recording.load()){setStatus("Stop capture before resetting callback profiling.");return;}
         retireFilePlayback();detach();callbackProbe.reset();attach();live.setToggleState(false,juce::dontSendNotification);setStatus("Callback timing counters reset. Playback and monitoring remain stopped.");
+    }
+    void exportCallbackProfile(){
+        auto snapshot=callbackProfileSnapshot();auto* detail=snapshot.getDynamicObject();
+        detail->setProperty("exported_utc",juce::Time::getCurrentTime().toISO8601(true));
+        detail->setProperty("graph_sha256",tonescope::session::hashParameters(parameters()));
+        if(auto* device=devices.getCurrentAudioDevice()){
+            detail->setProperty("device_name",device->getName());detail->setProperty("device_type",device->getTypeName());
+            detail->setProperty("sample_rate",device->getCurrentSampleRate());detail->setProperty("buffer_frames",device->getCurrentBufferSizeSamples());
+        }
+        const auto json=juce::JSON::toString(snapshot);auto safe=juce::Component::SafePointer<Main>(this);
+        chooser=std::make_unique<juce::FileChooser>("Export callback observations",juce::File::getSpecialLocation(juce::File::userDocumentsDirectory).getChildFile("tonescope-callback-observations.json"),"*.json");
+        chooser->launchAsync(juce::FileBrowserComponent::saveMode|juce::FileBrowserComponent::canSelectFiles|juce::FileBrowserComponent::warnAboutOverwriting,[safe,json](const juce::FileChooser& f){
+            if(!safe||f.getResult()==juce::File{})return;auto file=tonescope::session::fileForIo(f.getResult());
+            if(file==tonescope::session::fileForIo(safe->sourceFile)){safe->setStatus("Choose a report path different from the dry source.");return;}
+            safe->pool.addJob(new Job([safe,json,file]{const bool ok=tonescope::desktop::saveCallbackObservationsAtomically(file,json);juce::MessageManager::callAsync([safe,ok]{if(safe)safe->setStatus(ok?"Callback observations exported. Hardware qualification remains separate.":"Callback observation export failed; previous file preserved.");});}),true);
+        });
     }
 
     juce::ThreadPool pool{1};std::unique_ptr<juce::FileChooser> chooser;

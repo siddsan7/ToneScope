@@ -5,6 +5,7 @@
         auto* object=new juce::DynamicObject();juce::var state(object);
         auto put=[&](const juce::Identifier& key,const juce::var& value){object->setProperty(key,value);};
         put("microscope",microscopeSnapshot());
+        put("callbackProfile",callbackProfileSnapshot());
         if(assistantCommand)put("assistant",assistantCommand("assistant.status",{}));
         put("latency",rendered?rendered->latency:0);put("oversampling",oversampling);put("multiband",multiband);put("band",auditionBand);put("version",1);put("revision",(juce::int64)revision);put("renderedRevision",(juce::int64)renderedRevision);
         put("source",sourceFile!=juce::File{}?sourceFile.getFileName():(source?"Synthetic pluck study":""));
@@ -23,7 +24,10 @@
         // draw a decorative curve or interpolate fabricated audio measurements.
         auto logSpectrum=[&](const std::vector<double>& values){juce::Array<juce::var> result;if(values.empty()||!rendered)return result;for(int i=0;i<256;++i){double hz=20*std::pow(1000.0,i/255.0);auto k=juce::jlimit<size_t>(0,values.size()-1,(size_t)std::llround(hz/rendered->dry->sampleRate*2*(values.size()-1)));result.add(20*std::log10(juce::jmax(1.0e-8,values[k])));}return result;};
         auto envelope=[&](const std::vector<tonescope::DynamicsFrame>& frames){juce::Array<juce::var> result;for(size_t i=0;i<frames.size();i+=juce::jmax<size_t>(1,frames.size()/256))result.add(20*std::log10(juce::jmax(1.0e-8,frames[i].envelopeRms)));return result;};
-        put("gainReductionHistory",rendered?array(rendered->gainReductionHistory):juce::Array<juce::var>{});put("gainReductionSamples",rendered?array(rendered->gainReductionSamples):juce::Array<juce::var>{});juce::Array<juce::var> bandReduction;for(size_t b=0;b<3;++b)bandReduction.add(rendered?juce::var(array(rendered->bandGainReductionHistory[b])):juce::var(juce::Array<juce::var>{}));put("bandGainReductionHistory",bandReduction);
+        // Send at most 512 actual observations, retaining both endpoints and the
+        // corresponding source positions. The full measurement stays native.
+        auto boundedSeries=[](const auto& values){juce::Array<juce::var> result;const auto n=values.size(),count=std::min<size_t>(512,n);for(size_t i=0;i<count;++i){const auto index=count<2?0:i*(n-1)/(count-1);result.add((double)values[index]);}return result;};
+        put("gainReductionHistory",rendered?boundedSeries(rendered->gainReductionHistory):juce::Array<juce::var>{});put("gainReductionSamples",rendered?boundedSeries(rendered->gainReductionSamples):juce::Array<juce::var>{});juce::Array<juce::var> bandReduction;for(size_t b=0;b<3;++b)bandReduction.add(rendered?juce::var(boundedSeries(rendered->bandGainReductionHistory[b])):juce::var(juce::Array<juce::var>{}));put("bandGainReductionHistory",bandReduction);
         put("dryEnvelope",rendered?envelope(rendered->dryDynamics):juce::Array<juce::var>{});put("wetEnvelope",rendered?envelope(rendered->wetDynamics):juce::Array<juce::var>{});
         put("drySpectrum",rendered?logSpectrum(rendered->drySpectrum):juce::Array<juce::var>{});put("wetSpectrum",rendered?logSpectrum(rendered->wetSpectrum):juce::Array<juce::var>{});return state;
     }
@@ -37,9 +41,15 @@
         auto number=[&](const char* key){auto value=input[key];return (value.isInt()||value.isInt64()||value.isDouble())&&std::isfinite((double)value);};
         auto toggle=[&](juce::ToggleButton& button){if(input["value"].isBool())button.setToggleState((bool)input["value"],juce::sendNotificationSync);else setStatus("Expected a boolean control value.");};
         if(action=="snapshot"){}
+        else if(action=="profile.enable"&&input["value"].isBool())setCallbackProfiling((bool)input["value"]);
+        else if(action=="profile.reset")resetCallbackProfile();
+        else if(action=="profile.export")exportCallbackProfile();
         else if(action.startsWith("microscope."))microscopeCommand(action,input);
         else if(action=="undo")undoParameters();else if(action=="redo")redoParameters();else if(action=="recover")restoreRecovery();
-        else if(action=="assistant.ask"||action=="assistant.cancel"||action=="assistant.status"||action=="assistant.preview"||action=="assistant.audition"||action=="assistant.apply"||action=="assistant.dismiss"||action=="assistant.history.delete"){if(assistantCommand)assistantCommand(action,input);else setStatus("Assistant service unavailable. No request was sent.");}
+        else if(action=="assistant.ask"||action=="assistant.cancel"||action=="assistant.status"||action=="assistant.preview"||action=="assistant.audition"||action=="assistant.apply"||action=="assistant.dismiss"||action=="assistant.history.delete"){
+            if(assistantCommand){auto payload=input.clone();payload.getDynamicObject()->removeProperty("version");payload.getDynamicObject()->removeProperty("action");assistantCommand(action,payload);}
+            else setStatus("Assistant service unavailable. No request was sent.");
+        }
         else if(action=="import")chooseImport();else if(action=="open")openSession();else if(action=="save")saveSession();else if(action=="export")exportAudio();else if(action=="export.selection")exportAudio(true);else if(action=="devices")showDevices();else if(action=="play")togglePlay();else if(action=="pause")pausePlayback();else if(action=="rewind")rewindPlayback();
         else if(action=="quality"&&input["value"].isInt()&&((int)input["value"]==1||(int)input["value"]==2||(int)input["value"]==4)){oversampling=(int)input["value"];parametersChanged(true);}
         else if(action=="multiband"&&input["value"].isBool()){multiband=(bool)input["value"];parametersChanged(true);}

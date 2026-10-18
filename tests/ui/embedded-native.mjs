@@ -52,7 +52,17 @@ async function clickText(text,role='button'){
 }
 await call('Runtime.enable');
 const first=await settled();
+if(first.callbackProfile){
+  if(first.callbackProfile.enabled||first.callbackProfile.count!==0)throw Error('Callback probe must start disabled and empty');
+  const enabled=await invoke('profile.enable',{value:true});
+  if(!enabled.callbackProfile.enabled||enabled.callbackProfile.count!==0)throw Error('Hardware-free probe enable fabricated callbacks');
+  const reset=await invoke('profile.reset');
+  if(reset.callbackProfile.count!==0)throw Error('Callback probe reset failed');
+  const disabled=await invoke('profile.enable',{value:false});
+  if(disabled.callbackProfile.enabled)throw Error('Callback probe disable failed');
+}
 if(!first.dryPeaks.length||!first.wetSpectrum.length)throw Error('Measured traces are absent');
+if(first.gainReductionHistory.length>512||first.gainReductionHistory.length!==first.gainReductionSamples.length)throw Error('Unbounded or unpaired GR observations');
 const output=state=>state.controls.find(control=>control.key==='outputDb').value;
 const before=output(first);
 const changed=await invoke('parameter',{key:'outputDb',value:-3});

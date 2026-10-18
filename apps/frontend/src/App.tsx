@@ -860,6 +860,16 @@ export default function App() {
             <ChevronRight size={13} />
           </Button>
         </footer>
+        <details className="callback-diagnostics">
+          <summary>Callback observations <span>{model?.callbackProfile?.enabled ? "Recording timing" : "Off"}</span></summary>
+          <p>Optional timing of the native callback body. Enabling or resetting stops playback and monitoring. Reset before a controlled run; estimates include all callbacks since reset.</p>
+          <div className="live-controls">
+            <label className="inline"><Switch aria-label="Enable callback timing observations" checked={model?.callbackProfile?.enabled ?? false} disabled={!connected || model?.recording} onCheckedChange={value => send("profile.enable",{value})} />Observe callback timing</label>
+            <Button variant="outline" size="sm" disabled={!connected || model?.recording} onClick={() => send("profile.reset")}>Reset observations</Button>
+            <Button variant="outline" size="sm" disabled={!connected} onClick={() => send("profile.export")}>Export observations</Button>
+          </div>
+          <p>{model?.callbackProfile?.count ?? 0} callbacks · p99 upper estimate {model?.callbackProfile?.p99_upper_ns == null ? "unavailable" : `${(model.callbackProfile.p99_upper_ns / 1000).toFixed(1)} µs`} · observed scope misses {model?.callbackProfile?.scope_deadline_misses ?? 0}. Histogram estimates exclude final bookkeeping. This does not establish device deadlines or round-trip latency.</p>
+        </details>
         <div className="status" role="status" aria-live="polite">
           <span className={error ? "error-dot" : "status-dot"} />
           {error ||
