@@ -1,8 +1,49 @@
 #pragma once
 #include <array>
 #include <cmath>
+#include "FaustDrive.h"
+// Faust buffer type is independent of internal arithmetic precision.
+// Preserve double compressor/EQ state and the existing float drive I/O.
+#undef FAUSTFLOAT
+#define FAUSTFLOAT double
+namespace tonescope_faust {
+#include "../../../dsp/generated/ToneScopeCompressor.h"
+#include "../../../dsp/generated/ToneScopeBiquad.h"
+#include "../../../dsp/generated/ToneScopeEqCoefficients.h"
+}
+#undef FAUSTFLOAT
+#define FAUSTFLOAT float
 
 namespace tonescope::detail {
+// Explicit state ports retain linked/stereo/band ownership in fixed host
+// storage. Faust owns the numerical compressor and tone-EQ recurrences.
+inline double compressorStep(double energy, double& detector, double& reduction,
+    double sr, double threshold, double ratio, double attack, double release,
+    double knee, double makeup) noexcept {
+    tonescope_faust::ToneScopeCompressor kernel;
+    double gain=0, nextDetector=0, nextReduction=0;
+    double* in[]={&energy,&detector,&reduction,&sr,&threshold,&ratio,&attack,&release,&knee,&makeup};
+    double* out[]={&gain,&nextDetector,&nextReduction};
+    kernel.compute(1,in,out);
+    detector=nextDetector; reduction=nextReduction;
+    return gain;
+}
+inline void eqCoefficients(double kind,double hz,double q,double db,double sr,
+    double& b0,double& b1,double& b2,double& a1,double& a2) noexcept {
+    tonescope_faust::ToneScopeEqCoefficients kernel;
+    double* in[]={&kind,&hz,&q,&db,&sr};
+    double* out[]={&b0,&b1,&b2,&a1,&a2};
+    kernel.compute(1,in,out);
+}
+inline double biquadStep(double x,double& z1,double& z2,double b0,double b1,double b2,double a1,double a2) noexcept {
+    tonescope_faust::ToneScopeBiquad kernel;
+    double y=0,next1=0,next2=0;
+    double* in[]={&x,&z1,&z2,&b0,&b1,&b2,&a1,&a2};
+    double* out[]={&y,&next1,&next2};
+    kernel.compute(1,in,out);
+    z1=next1;z2=next2;
+    return y;
+}
 constexpr double pi = 3.14159265358979323846;
 struct Filter {
     double b0=1, b1=0, b2=0, a1=0, a2=0, z1=0, z2=0;

@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "kind": "host_software_callback_probe_microbenchmark",
+  "recorded_at_utc": "2026-10-18T04:22:57.1033709Z",
+  "tested_header_sha256": "5a510b17bd3a1576e5ab8443d28b6022456b7e0a5695478d25807994c2dddd58",
+  "tested_test_sha256": "e8dea798720f413265374fd2650f6fae5ba969815adc1a71b2b5137a607ec433",
+  "host": {
+    "os": "Microsoft Windows 10.0.26200",
+    "process_architecture": "X64",
+    "processor_count": 16,
+    "compiler": "Microsoft C/C++",
+    "compiler_file_version": "19.44.35223.0",
+    "language": "C++20",
+    "flags": "/O2 /MD /EHsc",
+    "configuration": "Release"
+  },
+  "measurement": {
+    "iterations": 20000,
+    "enabled_whole_scope_average_ns": 75.3,
+    "disabled_loop_average_ns": 0.375,
+    "minimum_observed_positive_clock_delta_ns": 100.0,
+    "fixed_probe_storage_bytes": 272,
+    "scope_storage_bytes": 32
+  },
+  "deterministic_assertions": "Passed: counts, strict nominal-period deadline comparison, histogram edges, p99/p99.9 estimates, unknown periods, saturation, disabled/reset behavior, concurrent snapshot consistency, monotonic clock/count and no C++ allocations through record/snapshot/RAII.",
+  "raw_output": "probe_tests.cpp\r\nprobe deterministic checks passed; HOST SOFTWARE BENCHMARK only: enabled scope average 75.3 ns, disabled 0.375 ns, minimum observed clock delta 100 ns, fixed storage 272 bytes, scope storage 32 bytes. No device qualification.",
+  "scope": "Host software loop including RAII scope, bookkeeping and loop cost; no callback DSP or audio device measured by this benchmark.",
+  "audio_device_opened": false,
+  "hardware_qualification": "Unperformed. No p99/p99.9 deadline, real-device timing or round-trip qualification is inferred.",
+  "source_probe_commit": "0482e002a2bfc33d4f9375e261383e11569326bf",
+  "tested_root_integration_commit": "b575f87a8280efae3dd32bdeb7aead26c459653f",
+  "hash_method": "SHA-256 of exact raw source file bytes; no newline normalization; hashes verified unchanged before and after compilation/run",
+  "tested_sources": [
+    "apps/desktop/CallbackProbe.h",
+    "tests/native/probe_tests.cpp"
+  ],
+  "build_command": "vcvars64.bat; cl /nologo /std:c++20 /EHsc /MD /O2 /I<root>/apps/desktop /Fo<worker>/build/probe-current.obj /Fe<worker>/build/probe-current.exe <root>/tests/native/probe_tests.cpp; <worker>/build/probe-current.exe"
+}

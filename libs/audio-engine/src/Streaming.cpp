@@ -1,4 +1,5 @@
 #include <tonescope/Streaming.h>
+#include "NativePath.h"
 #include <algorithm>
 #include <array>
 #include <bit>
@@ -12,7 +13,7 @@ namespace tonescope {
 namespace {
 constexpr std::uint64_t byteLimit=2ull*1024*1024*1024;
 constexpr int chunkFrames=1024;
-auto path(const std::string& s) { return std::filesystem::path(std::u8string(s.begin(),s.end())); }
+auto path(const std::string& s) { return detail::nativeAudioPath(s); }
 [[noreturn]] void fail(const char* reason) { throw std::runtime_error(reason); }
 std::uint16_t u16(const unsigned char* p) { return std::uint16_t(p[0])|(std::uint16_t(p[1])<<8); }
 std::uint32_t u32(const unsigned char* p) { return std::uint32_t(p[0])|(std::uint32_t(p[1])<<8)|(std::uint32_t(p[2])<<16)|(std::uint32_t(p[3])<<24); }

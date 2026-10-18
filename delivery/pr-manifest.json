@@ -8,8 +8,10 @@
       "depends_on": [],
       "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-01",
@@ -19,8 +21,10 @@
       ],
       "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-02",
@@ -30,8 +34,10 @@
       ],
       "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-03",
@@ -41,8 +47,10 @@
       ],
       "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-04",
@@ -53,8 +61,10 @@
       ],
       "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-05",
@@ -64,8 +74,10 @@
       ],
       "status": "in_progress",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-06",
@@ -76,8 +88,10 @@
       ],
       "status": "in_progress",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-07",
@@ -87,8 +101,10 @@
       ],
       "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-08",
@@ -98,8 +114,10 @@
       ],
       "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-09",
@@ -107,10 +125,12 @@
       "depends_on": [
         "PR-07"
       ],
-      "status": "in_progress",
+      "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-10",
@@ -120,8 +140,10 @@
       ],
       "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-11",
@@ -136,8 +158,10 @@
       ],
       "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-12",
@@ -149,8 +173,10 @@
       ],
       "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-13",
@@ -159,10 +185,12 @@
         "PR-10",
         "PR-12"
       ],
-      "status": "in_progress",
+      "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-14",
@@ -174,8 +202,10 @@
       ],
       "status": "in_progress",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-15",
@@ -185,8 +215,12 @@
         "PR-08",
         "PR-12"
       ],
-      "status": "planned",
-      "evidence": []
+      "status": "verification",
+      "evidence": [
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-16",
@@ -195,10 +229,12 @@
         "PR-09",
         "PR-15"
       ],
-      "status": "in_progress",
+      "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-17",
@@ -211,8 +247,10 @@
       ],
       "status": "in_progress",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-18",
@@ -222,8 +260,10 @@
       ],
       "status": "in_progress",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-19",
@@ -232,10 +272,12 @@
         "PR-16",
         "PR-17"
       ],
-      "status": "in_progress",
+      "status": "verification",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-20",
@@ -244,8 +286,12 @@
         "PR-18",
         "PR-19"
       ],
-      "status": "planned",
-      "evidence": []
+      "status": "verification",
+      "evidence": [
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-21",
@@ -254,8 +300,12 @@
         "PR-03",
         "PR-17"
       ],
-      "status": "planned",
-      "evidence": []
+      "status": "verification",
+      "evidence": [
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-22",
@@ -263,8 +313,12 @@
       "depends_on": [
         "PR-21"
       ],
-      "status": "planned",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-23",
@@ -272,8 +326,12 @@
       "depends_on": [
         "PR-22"
       ],
-      "status": "planned",
-      "evidence": []
+      "status": "in_progress",
+      "evidence": [
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-24",
@@ -282,8 +340,12 @@
         "PR-20",
         "PR-23"
       ],
-      "status": "planned",
-      "evidence": []
+      "status": "blocked_external",
+      "evidence": [
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     },
     {
       "id": "PR-25",
@@ -294,9 +356,33 @@
       ],
       "status": "in_progress",
       "evidence": [
-        "delivery/progress.json"
-      ]
+        "delivery/progress.json",
+        "delivery/brain.md"
+      ],
+      "qualification_status": "unqualified_development"
     }
   ],
-  "note": "Task IDs from supplied specification; no GitHub PRs or merges have been created. Verification is development-level, not release completion."
+  "note": "Specification task IDs are logical work units, not GitHub PR numbers. Actual private delivery PRs below consolidate dependency-compatible slices. Development verification does not imply release qualification.",
+  "actual_pull_requests": [
+    {
+      "number": 1,
+      "scope": "Native foundation",
+      "state": "merged"
+    },
+    {
+      "number": 2,
+      "scope": "Oversampling and phase-correct multiband microscope",
+      "state": "merged"
+    },
+    {
+      "number": 3,
+      "scope": "Bounded native exports and independent evaluation gates",
+      "state": "merged"
+    },
+    {
+      "number": 4,
+      "scope": "Embedded frontend, durable native state, optional assistant and package integration",
+      "state": "draft"
+    }
+  ]
 }

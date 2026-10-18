@@ -15,12 +15,9 @@ std::array<float,17> values(const Parameters& p) {return {p.inputDb,p.thresholdD
 struct Biquad {
  double b0=1,b1=0,b2=0,a1=0,a2=0,z1=0,z2=0;
  void design(int type,double hz,double q,double db,double sr) {
-  double A=std::pow(10.,db/40.),w=2*pi*hz/sr,c=std::cos(w),s=std::sin(w),alpha=s/(2*q),a0;
-  if(type==1) {a0=1+alpha/A;b0=1+alpha*A;b1=-2*c;b2=1-alpha*A;a1=-2*c;a2=1-alpha/A;}
-  else { double t=2*std::sqrt(A)*s/std::sqrt(2.); if(type==0) {a0=(A+1)+(A-1)*c+t;b0=A*((A+1)-(A-1)*c+t);b1=2*A*((A-1)-(A+1)*c);b2=A*((A+1)-(A-1)*c-t);a1=-2*((A-1)+(A+1)*c);a2=(A+1)+(A-1)*c-t;} else {a0=(A+1)-(A-1)*c+t;b0=A*((A+1)+(A-1)*c+t);b1=-2*A*((A-1)+(A+1)*c);b2=A*((A+1)+(A-1)*c-t);a1=2*((A-1)-(A+1)*c);a2=(A+1)-(A-1)*c-t;}}
-  b0/=a0;b1/=a0;b2/=a0;a1/=a0;a2/=a0;
+  detail::eqCoefficients(type,hz,q,db,sr,b0,b1,b2,a1,a2);
  }
- double tick(double x) {double y=b0*x+z1;z1=b1*x-a1*y+z2;z2=b2*x-a2*y;return y;}
+ double tick(double x) {return detail::biquadStep(x,z1,z2,b0,b1,b2,a1,a2);}
 };
 }
 bool validate(const Parameters& p,double sr,std::string& error) {
@@ -49,17 +46,7 @@ struct Engine::Impl {
   }
  }
  double compress(double energy, double& detector, double& reduction, const std::array<float,17>& v) noexcept {
-  const double coeff=std::exp(-1/(.010*sr));
-  detector=coeff*detector+(1-coeff)*energy;
-  const double over=10*std::log10(std::max(detector,1e-30))-v[1];
-  const double knee=v[5],slope=1-1/v[2];
-  double targetReduction=0;
-  if(knee>0&&over>-knee/2&&over<knee/2) targetReduction=slope*(over+knee/2)*(over+knee/2)/(2*knee);
-  else if(over>=knee/2) targetReduction=slope*over;
-  const double ms=targetReduction>reduction?v[3]:v[4];
-  const double a=std::exp(-1/(ms*.001*sr));
-  reduction=a*reduction+(1-a)*targetReduction;
-  return gain(v[6]-reduction);
+  return detail::compressorStep(energy,detector,reduction,sr,v[1],v[2],v[3],v[4],v[5],v[6]);
  }
  Biquad eq[2][3];std::array<float,5> eqParameters{};double prev[2]{},lp[2]{},dcx[2]{},dcy[2]{};std::uint64_t faults=0;
 };

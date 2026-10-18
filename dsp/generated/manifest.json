@@ -1,8 +1,63 @@
 {
   "generator": "Faust",
   "version": "2.88.0",
-  "source": "dsp/faust/drive.dsp",
-  "output": "dsp/generated/ToneScopeDrive.h",
-  "arguments": ["-lang", "cpp", "-light", "-cn", "ToneScopeDrive"],
-  "scope": "Generated memoryless tanh waveshaper; compressor, EQ and drive surrounding filters are handwritten C++20"
+  "hashEncoding": "UTF-8 with LF newlines",
+  "graphs": [
+    {
+      "source": "dsp/faust/drive.dsp",
+      "output": "dsp/generated/ToneScopeDrive.h",
+      "arguments": [
+        "-lang",
+        "cpp",
+        "-light",
+        "-cn",
+        "ToneScopeDrive"
+      ],
+      "sourceSha256": "9ff8096bda5371a798dbedf0a29a311dd91909737c13ba125e0efeaef2b0a40f",
+      "outputSha256": "70370359b55c3794e230b1f26d0ed2b7c3927a6c09f130d0f0d6fa9a39b1479e"
+    },
+    {
+      "source": "dsp/faust/compressor.dsp",
+      "output": "dsp/generated/ToneScopeCompressor.h",
+      "arguments": [
+        "-lang",
+        "cpp",
+        "-double",
+        "-light",
+        "-cn",
+        "ToneScopeCompressor"
+      ],
+      "sourceSha256": "e893d6502121550f301f0713336eff438dc20b65a3abd03e5403cbeb6fbc7e81",
+      "outputSha256": "af6fe31792e712496091532f750f89cf64fe6489995d781e290ed4ffcaef76ad"
+    },
+    {
+      "source": "dsp/faust/biquad.dsp",
+      "output": "dsp/generated/ToneScopeBiquad.h",
+      "arguments": [
+        "-lang",
+        "cpp",
+        "-double",
+        "-light",
+        "-cn",
+        "ToneScopeBiquad"
+      ],
+      "sourceSha256": "e0b185c472c0cfadb1634436311350d4c42e7458d9e86c964ef57f9308ff0e78",
+      "outputSha256": "f0faab48082969adf67e367f3032aba79544ce8bf66ed6a5ea8daa2c53c24ad4"
+    },
+    {
+      "source": "dsp/faust/eq-coefficients.dsp",
+      "output": "dsp/generated/ToneScopeEqCoefficients.h",
+      "arguments": [
+        "-lang",
+        "cpp",
+        "-double",
+        "-light",
+        "-cn",
+        "ToneScopeEqCoefficients"
+      ],
+      "sourceSha256": "03c84f72a4ddfea7748bdbb22fdd490d7423fadb94b0135a690a896bdd534c96",
+      "outputSha256": "0d93e00416c123c29b1fc3536d09252640ab03755c820eea3b3de3752f20e9f2"
+    }
+  ],
+  "scope": "Generated tanh, complete compressor recurrence, RBJ tone EQ coefficient design and biquad recurrence. Host owns smoothing, stereo linking, state storage, crossover, FIR and surrounding drive filters."
 }

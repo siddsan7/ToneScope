@@ -11,7 +11,7 @@ import sys
 import uuid
 import traceback
 from pathlib import Path
-from provenance import runtime_files, source_identity
+from provenance import runtime_files, source_identity, compiled_identity
 from numeric import eq_response, tone_transfer, compressor_reference, crossover_response, drive_periodic_reference
 
 from oracles import (VERSION, compressor_gain_db, fixture, flatten, read_wav,
@@ -52,6 +52,7 @@ class Runner:
         self.initial_source = source_identity(ROOT)
         self.initial_dirty = git_dirty()
         self.runtime = runtime_files(ROOT, self.cli)
+        self.compiled = compiled_identity(self.cli)
         self.command_index = 0
         self.active_folder = self.out
 
@@ -468,6 +469,7 @@ class Runner:
                    "source_unchanged": self.initial_source == source_identity(ROOT),
                    "started_working_tree_dirty": self.initial_dirty,
                    "runtime_files": self.runtime,
+                   "compiled_identity": self.compiled,
                    "runtime_unchanged": self.runtime == runtime_files(ROOT, self.cli),
                    "gates_sha256": sha256(ROOT / "evals/gates.json"),
                    "runner_sha256": sha256(__file__), "oracle_sha256": sha256(ROOT / "evals/oracles.py"),

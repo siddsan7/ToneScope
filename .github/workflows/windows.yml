@@ -1,21 +1,85 @@
 name: Windows development checks
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 8 * * *'
 permissions:
   contents: read
 jobs:
   native:
     runs-on: windows-2022
+    env:
+      TONESCOPE_TEST_CLI: ${{ github.workspace }}\build\windows-dev\tonescope_cli_artefacts\Release\tonescope_cli.exe
+      TONESCOPE_ASSISTANT_RUNTIME: ${{ github.workspace }}\services\audio-assistant
+      TONESCOPE_REQUIRE_NATIVE_TESTS: '1'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - run: cmake --preset windows-dev
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            apps/frontend/package-lock.json
+            services/audio-assistant/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: services/audio-assistant
+      - run: ./scripts/bootstrap.ps1
+      - run: ./scripts/bootstrap-faust.ps1
+      - run: ./.tools/python/cmake/data/bin/cmake.exe --preset windows-dev
       - run: cmake --build --preset windows-dev -- /m:1 /nr:false
       - run: ctest --preset windows-dev --output-on-failure
+      - name: Native app startup without opening hardware
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/smoke | Out-Null
+          $output = Join-Path $PWD 'artifacts/smoke/native.png'
+          $app = Start-Process -FilePath 'build/windows-dev/ToneScope_artefacts/Release/ToneScope.exe' -ArgumentList @('--demo','--screenshot',('"'+$output+'"')) -WindowStyle Hidden -PassThru
+          if (-not $app.WaitForExit(30000)) { Stop-Process -Id $app.Id; throw 'Native startup timed out' }
+          if ($app.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $output)) { throw 'Native startup did not produce its software smoke artifact' }
+      - run: npm run typecheck && npm test && npm run build
+        working-directory: services/audio-assistant
+        shell: cmd
+      - run: npm run typecheck && npm test && npm audit --omit=dev --audit-level=high
+        working-directory: apps/frontend
+        shell: cmd
       - run: python -m unittest discover -s tests/integration -v
+      - run: python scripts/test-smoothing-mutation.py --output artifacts/smoothing-mutation
+      - run: python scripts/test-schema-mutation.py --root . --output artifacts/schema-mutation
+      - name: Actual assistant tool-validation mutations
+        run: node services/audio-assistant/scripts/test-tool-mutation.mjs --output "${{ github.workspace }}/artifacts/tool-mutation"
+      - name: Private package and installation regression checks
+        shell: pwsh
+        run: |
+          node scripts/bundle-assistant.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/package-dev.ps1 -Output artifacts/ToneScope-ci-dev.zip
+          ./scripts/test-package-dev.ps1
       - shell: pwsh
         run: |
           ./scripts/tonescope.ps1 eval --suite contracts --output artifacts/contracts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./scripts/tonescope.ps1 eval --suite integration --output artifacts/integration
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/tonescope.ps1 eval --suite dsp --output artifacts/dsp
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python evals/run.py --suite ai-replay --split development --output artifacts/ai-replay
+          if ($LASTEXITCODE -ne 2) { throw 'Replay must retain its explicitly blocked live qualification' }
+          python evals/check_development.py artifacts/ai-replay/run.json
           exit $LASTEXITCODE
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: windows-evidence-${{ github.sha }}
+          path: artifacts/
+          retention-days: ${{ github.event_name == 'schedule' && 90 || 30 }}
       # This is a development gate. Production DSP/device/human/model gates are
       # separately required by release-check and cannot be inferred from CI.
+  portable-sanitizers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: cmake -S . -B build/sanitizers -DTONESCOPE_CORE_ONLY=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+      - run: cmake --build build/sanitizers --parallel 2
+      - run: ctest --test-dir build/sanitizers --output-on-failure

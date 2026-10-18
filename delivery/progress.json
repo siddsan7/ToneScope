@@ -2,22 +2,31 @@
   "schema_version": 1,
   "product": "ToneScope",
   "version": "0.1.0-dev",
-  "overall_status": "incomplete_development_build",
+  "overall_status": "implemented_unqualified_development",
   "production_ready": false,
   "source_state": {
-    "base_commit": "22fe89a5d2c27e6ef2ba2d4f03433dfa4891bca5",
-    "working_tree_dirty": true,
-    "no_merge_or_publication": true
+    "integration_branch": "codex/delivery-orchestration",
+    "merged_private_prs": [
+      1,
+      2,
+      3
+    ],
+    "public_release": false,
+    "integration_pr": 4,
+    "integration_pr_status": "Authoritative live review/check/merge state: https://github.com/siddsan7/ToneScope/pull/4",
+    "final_evidence_directory": "artifacts/final/"
   },
   "requirements": {
     "TS-001": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "WAV PCM16/24/32 and float32 decode"
+        "Validated PCM16/24/32 and float32 WAV import",
+        "Bounded 2 GiB/two-hour CLI streaming and persistent capture",
+        "Bounded desktop full-source metadata, history-preserving <=10s inspection and background replay",
+        "Deep Unicode Windows path and sidecar regressions"
       ],
       "remaining": [
-        "2 GiB/two-hour streaming",
-        "broader fuzz corpus"
+        "Broader licensed/adversarial input qualification"
       ]
     },
     "TS-002": {
@@ -30,204 +39,199 @@
       ]
     },
     "TS-003": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "Play/pause/seek/loop and 120-second dry capture replay"
+        "Play/pause/seek/loop",
+        "Bounded background persistent dry recording, overflow/incomplete status and explicit recovery",
+        "Bounded worker-resampled long-file replay and absolute source timeline"
       ],
       "remaining": [
-        "Persistent dry-take save",
-        "streaming/overflow and disk-fault handling"
+        "Physical device/disk fault qualification"
       ]
     },
     "TS-004": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "Native compressor/EQ and Faust-generated tanh stage"
+        "Actual generated Faust compressor, tone-EQ coefficients/biquads and tanh kernels",
+        "1x/2x/4x drive, per-stage bypass and independent response/timing/alias gates"
       ],
       "remaining": [
-        "Faust compressor/EQ conversion",
-        "oversampled drive",
-        "independent timing/response/alias qualification"
+        "Physical callback budget and listening qualification"
       ]
     },
     "TS-005": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "Frozen selected-region RMS match with 12 dB cap"
+        "Declared 0/32-sample delay alignment",
+        "Frozen selected-region RMS match with 12 dB cap",
+        "Calibrated live dry clamp and smoothed input trim"
       ],
       "remaining": [
-        "Nonzero-delay alignment and qualified transitions"
+        "Physical transition/listening qualification"
       ]
     },
     "TS-006": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "Time selection and numeric bounds"
+        "Time selection and identical full-history frequency-band audition filters"
       ],
       "remaining": [
-        "Frequency-band audition and identical branch filters"
+        "Physical transition/listening qualification"
       ]
     },
     "TS-007": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "Raw and RMS-matched mathematical residual"
+        "Aligned raw and RMS-matched mathematical residuals",
+        "Known correct delay null and incorrect delay non-null regressions"
       ],
       "remaining": [
-        "Nonzero-delay/phase-qualified comparisons"
+        "Human listening qualification"
       ]
     },
     "TS-008": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "Waveforms, stereo-energy spectrum and instantaneous live metering"
+        "Measured waveforms, stereo-energy spectrum and RMS envelopes",
+        "Library actual overall/per-band compressor reduction timeline",
+        "Measured overall/per-band gain reduction, paired bounded source positions and full-history energy checkpoints"
       ],
       "remaining": [
-        "Envelope/gain-reduction histories",
-        "analysis transport/drop handling"
+        "Physical transport/drop qualification"
       ]
     },
     "TS-009": {
-      "status": "planned",
-      "implemented": [],
+      "status": "implemented_unqualified",
+      "implemented": [
+        "Library manual soft/hard passage RMS, sample peak, crest, contrast and explicitly available envelope crossing measures",
+        "Native/React manual soft/hard passage marks, exact measurements and revision-gated results"
+      ],
       "remaining": [
-        "Soft/hard passage dynamics and attack/decay views"
+        "Human musical usefulness study"
       ]
     },
     "TS-010": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "Six stopped/reconfigured stage orders"
+        "Six stopped/reconfigured stage orders",
+        "Phase-compensated LR4 three-band compression with independent detectors"
       ],
       "remaining": [
-        "Phase-correct three-band compression"
+        "Hardware timing/listening qualification"
       ]
     },
     "TS-011": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "Shared strict version1 session parser, atomic session write, source digest validation"
+        "Strict schema1 roundtrip/reject-unknown migration policy",
+        "Atomic session save, source digest checks and verified relocation",
+        "Persistent captures, interrupted-take recovery and bounded parameter transaction undo"
       ],
       "remaining": [
-        "Migration fixtures",
-        "crash recovery",
-        "captured dry persistence"
+        "Physical interrupted-write/device qualification"
       ]
     },
     "TS-012": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "Native names/focus, keyboard shortcuts and numeric entries"
+        "Native and web keyboard commands, named controls, numeric entries and undo/redo",
+        "200% text scaling, forced colors, reduced-motion software checks",
+        "Actual embedded assistant/passages/control/undo interaction checks"
       ],
       "remaining": [
-        "Complete keyboard/undo commands",
-        "Narrator/high-contrast/text-scaling/mixed-DPI and human study"
+        "Narrator, mixed-DPI and human accessibility qualification"
       ]
     },
     "TS-013": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "Float WAV exports and headless hashed provenance"
+        "Bounded native full/selected exports with canonical graph/source/artifact hashes",
+        "Exclusive concurrent output publication",
+        "Raw desktop exports exclude audition filtering and match/monitor gain",
+        "Reviewed streamed desktop export, output reservation and no-replace sidecar evidence"
       ],
       "remaining": [
-        "Complete UI evidence bundle/provenance",
-        "selected-region export modes"
+        "Physical disk-fault qualification"
       ]
     },
     "TS-014": {
-      "status": "planned",
-      "implemented": [],
+      "status": "implemented_unqualified",
+      "implemented": [
+        "Software packaging/installer/uninstaller/rollback and redacted diagnostics under isolated implementation",
+        "Verified allowlist packaging with exact executable hashes, versioned install/rollback/uninstall and redacted diagnostics"
+      ],
       "remaining": [
-        "Recovery diagnostics",
-        "qualified installer/uninstaller",
-        "signing/support matrix"
+        "Signing, JUCE licensing selection and clean-machine qualification"
       ]
     },
     "TS-015": {
-      "status": "planned",
-      "implemented": [],
+      "status": "implemented_unqualified",
+      "implemented": [
+        "Optional offline rules baseline and actual native candidate renderer",
+        "Bounded typed tools, authenticated loopback broker and stale/hash/forgery gates",
+        "Dormant consent/budget-gated Gateway adapter and actual SDK mock protocol tests",
+        "Actual native authenticated proposal/preview, frozen RMS A/B, explicit Apply and one-step undo",
+        "Bounded request admission and history/asset retention"
+      ],
       "remaining": [
-        "Optional isolated assistant service, tool contracts, preview/apply/undo and live evaluations"
+        "Provider-backed corpus/model quality and human preference qualification"
       ]
     },
     "TS-016": {
-      "status": "partial",
+      "status": "implemented_unqualified",
       "implemented": [
-        "Independent fixtures/oracles, mutation checks, coverage map and strict release validator"
+        "Independent numerical oracles and mutation tests",
+        "Frozen grouped regression corpus; no false holdout claim",
+        "Adversarial real native assistant tests and fail-closed release evidence",
+        "Compiled source identity and Windows/Linux sanitizer CI",
+        "Actual product-source smoothing, session-version and tool-authorization mutation campaigns; source-bound protocol-only CI checker"
       ],
       "remaining": [
-        "Full missing requirement families and locked/human/hardware qualification"
+        "Hardware, human, licensed/sequestered corpus and live-model qualification"
       ]
     }
   },
   "verification": {
-    "windows_release_build": "pass",
-    "ctest": {
-      "pass": 1,
+    "scope": "Implemented software; exact clean-build identities and final results belong in artifacts/final/ and exact-head GitHub checks. Prior local runs below are explicitly intermediate.",
+    "native_ctest_last_pass": {
+      "pass": 7,
+      "fail": 0,
+      "log": ".tools/final-ctest-initial.log",
+      "scope": "Intermediate integrated native executables; final clean-head rerun recorded separately"
+    },
+    "python_last_pass": {
+      "pass": 34,
+      "fail": 0,
+      "skipped": 0,
+      "log": ".tools/final-python-initial.log",
+      "scope": "Intermediate integrated checkout; final clean-head rerun recorded separately"
+    },
+    "assistant_last_pass": {
+      "pass": 24,
+      "fail": 0,
+      "skipped": 0,
+      "log": "artifacts/integration-review/final-9c419bb-approval.md",
+      "scope": "Independent agent actual-CLI rerun"
+    },
+    "frontend_last_pass": {
+      "pass": 5,
       "fail": 0
     },
-    "python_tests": {
-      "pass": 15,
-      "fail": 0
+    "dsp_faust_integrated": {
+      "pass": 12,
+      "fail": 0,
+      "path": "artifacts/dsp-faust-integrated/run.json"
     },
-    "faust_generated_drift": "pass",
-    "ui_component_snapshot": "pass; offline synthetic fixture, no device opened",
-    "suites": {
-      "contracts": {
-        "run_id": "run-2685bba1e702435c98d2166a6262fdd8",
-        "status": "pass",
-        "pass": 9,
-        "blocked": 0,
-        "fail": 0,
-        "path": "artifacts/contracts/run.json",
-        "sha256": "de60d857a12ce5112be9c37b2cfbabb892a9a85b76cde1ed829f9bba6ddc58b8"
-      },
-      "integration": {
-        "run_id": "run-9bfb0662adaf439db5e84946cd8bc919",
-        "status": "pass",
-        "pass": 6,
-        "blocked": 0,
-        "fail": 0,
-        "path": "artifacts/integration/run.json",
-        "sha256": "546351487bb683c4173f7326eb1e21c1b79e10df5576aba3ebca7ee0e700fb34"
-      },
-      "dsp": {
-        "run_id": "run-5cc1bb16b73a40dfbb1ac8e83e4f6bd0",
-        "status": "blocked",
-        "pass": 7,
-        "blocked": 1,
-        "fail": 0,
-        "path": "artifacts/dsp/run.json",
-        "sha256": "5845ec4b8507557e84121c1edc3e05ff1714a72a85369ee3c6ac36f80cb38a89"
-      },
-      "ai-replay": {
-        "run_id": "run-2276ed2dd04649b1a63bc9a46b8aeb9e",
-        "status": "blocked",
-        "pass": 0,
-        "blocked": 1,
-        "fail": 0,
-        "path": "artifacts/ai-replay/run.json",
-        "sha256": "c9df02e8c5fa6f71b77ad0b8016edd89e3044ff23afc357b3b5c9f01d638fe27"
-      },
-      "ai-live": {
-        "run_id": "run-961c4ad6e5e241f98d48d61239284bc6",
-        "status": "blocked",
-        "pass": 0,
-        "blocked": 1,
-        "fail": 0,
-        "path": "artifacts/ai-live/run.json",
-        "sha256": "463b4b88608c0c884321d7d60457c6b26cfc6978d2b326a77bf9ad7aab50f2c0"
-      }
-    }
-  },
-  "binaries": {
-    "desktop": {
-      "path": "build/windows-dev/ToneScope_artefacts/Release/ToneScope.exe",
-      "sha256": "912d28bf4f62e53e0fde63852c1f11ccf0a102c50e2492f31991b32875609573"
-    },
-    "renderer": {
-      "path": "build/windows-dev/tonescope_cli_artefacts/Release/tonescope_cli.exe",
-      "sha256": "877f242683bb6b9862ca5e298edfe6ed5ef5cd8a5e632a7624fc1fd6b65e14cd"
+    "embedded_native_probe": "artifacts/frontend-native/probe.json",
+    "accessibility_software": "artifacts/frontend-native/accessibility-software.json",
+    "portable_sanitizers_ci": "PR4 exact-head portable-sanitizers check; current status on GitHub",
+    "long_file_embedded_probe": ".worktrees/native-state/artifacts/frontend-native-long-file/probe.json",
+    "callback_probe": "docs/transport/callback-probe-benchmark.json (host microbenchmark only)",
+    "product_mutations": {
+      "smoothing": "artifacts/final/smoothing-mutation/result.json",
+      "session_version": "artifacts/final/schema-mutation/run.json",
+      "tool_validation": "artifacts/final/tool-mutation-current/result.json",
+      "scope": "Actual isolated product-source mutants; baseline passes and deliberate guards fail; no hardware/live-model claim"
     }
   },
   "external_blockers": [
@@ -237,18 +241,18 @@
     "Code-signing identity and clean-machine install qualification",
     "Optional provider credentials, consent and budget for live D3 evaluation"
   ],
-  "software_next": [
-    "Complete long-file and dry recording persistence",
-    "Implement band audition, envelopes/dynamics, phase-correct multiband and oversampling with independent oracles",
-    "Complete recovery/undo, full accessibility and packaging",
-    "Implement separately gated D3 service/tools and evaluations"
-  ],
+  "software_next": [],
   "limitations": [
-    "Initial core decoder 256 MiB; desktop 100 MiB and 120 seconds",
-    "1x drive aliasing unqualified",
-    "Some low WAV sample rates need valid lower frequency settings; default processing is for 44.1/48/96 kHz",
-    "Linear monitor sample-rate conversion unqualified",
-    "Two-step audio/manifest publication may leave complete audio when sidecar fails",
-    "MSVC generated/precision conversion warnings remain; no warning-free build claim"
-  ]
+    "Implemented software remains unsigned and unqualified for production; physical/human/live-model release gates remain required",
+    "RMS and sample peak are not perceptual loudness or true peak",
+    "Integer delay compensation does not remove frequency-dependent filter phase",
+    "Linear monitor resampling still needs physical/listening qualification",
+    "Two-step audio/manifest publication can leave complete audio if sidecar publication fails",
+    "Generated Faust and numeric-conversion MSVC warnings remain"
+  ],
+  "delivery_gates": {
+    "review": "Independent assigned agent review, exact composition; PR4 comments and artifacts/integration-review/",
+    "ci": "Passing exact-head Windows and Linux sanitizer checks required before merge",
+    "package": "Fresh allowlist package with binary/build/dependency hashes; private unsigned development only"
+  }
 }

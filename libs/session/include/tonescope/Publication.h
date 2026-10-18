@@ -15,6 +15,21 @@
 #endif
 
 namespace tonescope::session {
+#if defined(_WIN32)
+inline juce::String publicationPath(const juce::String& absolute) {
+    if(absolute.startsWith("\\\\?\\"))return absolute;
+    if(absolute.startsWith("\\\\"))return "\\\\?\\UNC\\"+absolute.substring(2);
+    return "\\\\?\\"+absolute;
+}
+#endif
+inline juce::File fileForIo(const juce::File& file) {
+    if(file==juce::File{})return file;
+#if defined(_WIN32)
+    return juce::File(publicationPath(file.getFullPathName()));
+#else
+    return file;
+#endif
+}
 // File-worker only. Cooperating writers reserve BOTH publication paths; Windows
 // delete-on-close releases reservations even on process failure. No waiting loop.
 class PublicationReservation {
@@ -26,7 +41,8 @@ public:
             for(size_t i=0;i<names.size();++i) {
                 auto lock=names[i]+".tonescope-lock";
 #if defined(_WIN32)
-                handles[i]=CreateFileW(lock.toWideCharPointer(),GENERIC_READ|GENERIC_WRITE,0,nullptr,CREATE_NEW,
+                auto nativeLock=publicationPath(lock);
+                handles[i]=CreateFileW(nativeLock.toWideCharPointer(),GENERIC_READ|GENERIC_WRITE,0,nullptr,CREATE_NEW,
                     FILE_ATTRIBUTE_TEMPORARY|FILE_FLAG_DELETE_ON_CLOSE,nullptr);
                 if(handles[i]==INVALID_HANDLE_VALUE)throw std::runtime_error("Another writer reserves this output or manifest");
 #else
@@ -49,7 +65,8 @@ private:
 };
 inline bool publishCompleteFile(const juce::File& temporary,const juce::File& destination,bool overwrite) {
 #if defined(_WIN32)
-    return MoveFileExW(temporary.getFullPathName().toWideCharPointer(),destination.getFullPathName().toWideCharPointer(),
+    auto from=publicationPath(temporary.getFullPathName()),to=publicationPath(destination.getFullPathName());
+    return MoveFileExW(from.toWideCharPointer(),to.toWideCharPointer(),
         MOVEFILE_WRITE_THROUGH|(overwrite?MOVEFILE_REPLACE_EXISTING:0))!=0;
 #else
     auto convert=[](const juce::File& f){auto s=f.getFullPathName().toStdString();return std::filesystem::path(std::u8string(s.begin(),s.end()));};

@@ -4,7 +4,7 @@ import math
 import re
 from pathlib import Path
 from oracles import sha256
-from provenance import git, source_identity, runtime_files
+from provenance import git, source_identity, runtime_files, compiled_identity, valid_compiled_identity
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -170,6 +170,9 @@ def validate_manifest(path):
                     errors.append("suite CLI hash must resolve to one actual runtime file")
                 elif actual_files != runtime_files(ROOT, binaries[0]["path"]):
                     errors.append("runtime inventory differs from evaluator and binary on disk")
+                elif (run.get("compiled_identity") != compiled_identity(binaries[0]["path"])
+                      or not valid_compiled_identity(run.get("compiled_identity"), manifest["commit_sha"], source_identity(ROOT))):
+                    errors.append("compiled binary source identity differs from clean release checkout")
             for field, filename in (("runner_sha256", "run.py"), ("oracle_sha256", "oracles.py")):
                 if run.get(field) != sha256(Path(__file__).parent / filename):
                     errors.append(f"suite {field} differs from executed evaluator")

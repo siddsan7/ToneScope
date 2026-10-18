@@ -22,6 +22,163 @@ namespace {void require(bool ok,const char* text){if(!ok)throw std::runtime_erro
 void put(std::ofstream& f,unsigned value,int bytes){for(int i=0;i<bytes;++i)f.put(char(value>>(8*i)));}
 void fixture(const std::filesystem::path& path,int format,int bits){std::ofstream f(path,std::ios::binary);int count=bits/8;int data=count*2;f.write("RIFF",4);put(f,36+data,4);f.write("WAVEfmt ",8);put(f,16,4);put(f,format,2);put(f,1,2);put(f,48000,4);put(f,48000*count,4);put(f,count,2);put(f,bits,2);f.write("data",4);put(f,data,4);put(f,0, count);unsigned v=bits==16?0xc000:bits==24?0xc00000:0xc0000000;put(f,v,count);}
 }
+void envelopeHistoryTests() {
+ AudioData full;full.samples.assign(2,std::vector<float>(14400,0));
+ for(auto& ch:full.samples) {
+  std::fill(ch.begin(),ch.begin()+1000,.2f);
+  std::fill(ch.begin()+3000,ch.begin()+6000,.5f);
+  std::fill(ch.begin()+8500,ch.begin()+10000,.8f);
+ }
+ auto wet=full;for(auto& ch:wet.samples)for(float& x:ch)x*=.5f;
+ constexpr int offset=2000;
+ auto window=full,wetWindow=wet;
+ for(auto* audio:{&window,&wetWindow})for(auto& ch:audio->samples)ch.erase(ch.begin(),ch.begin()+offset);
+ const double a=std::exp(-1/(.010*full.sampleRate));double initial=0,wetInitial=0;
+ for(int n=0;n<offset;++n) {
+  double linked=0,wetLinked=0;
+  for(size_t c=0;c<full.samples.size();++c){linked+=double(full.samples[c][n])*full.samples[c][n]/full.samples.size();wetLinked+=double(wet.samples[c][n])*wet.samples[c][n]/wet.samples.size();}
+  initial=a*initial+(1-a)*linked;wetInitial=a*wetInitial+(1-a)*wetLinked;
+ }
+ const auto original=dynamics(full,1),cached=dynamics(window,1,initial);
+ for(size_t i=0;i<cached.size();++i) {
+  require(cached[i].sample+offset==original[i+offset].sample,"cached envelope timestamps map to source position");
+  require(cached[i].envelopeRms==original[i+offset].envelopeRms&&cached[i].rms==original[i+offset].rms&&cached[i].samplePeak==original[i+offset].samplePeak,"seeded cached envelope equals full-source history exactly");
+ }
+ const auto reference=comparePassages(full,wet,{2100,8400},{8100,14400});
+ const auto measured=comparePassages(window,wetWindow,{100,6400},{6100,12400},0,initial,wetInitial);
+ require(reference.valid&&measured.valid&&reference.contrastChangeDb==measured.contrastChangeDb,"seeded passage level contrast unchanged");
+ for(auto pair:{std::pair{reference.soft.dry,measured.soft.dry},std::pair{reference.soft.wet,measured.soft.wet},std::pair{reference.hard.dry,measured.hard.dry},std::pair{reference.hard.wet,measured.hard.wet}}) {
+  const auto& x=pair.first;const auto& y=pair.second;
+  require(x.rms==y.rms&&x.samplePeak==y.samplePeak&&x.crestDb==y.crestDb&&x.envelopePeak==y.envelopePeak,"seeded passage scalar metrics equal full-source metrics");
+  require(x.riseAvailable==y.riseAvailable&&x.decayAvailable==y.decayAvailable&&x.riseAvailable&&x.decayAvailable,"seeded passage crossing availability preserved");
+  require(near(x.riseMs,y.riseMs,1e-10)&&near(x.decayMs,y.decayMs,1e-10),"seeded passage rise and decay equal full-source timing");
+ }
+ AudioData steady;steady.samples.assign(1,std::vector<float>(4800,.5f));
+ const auto initialized=comparePassages(steady,steady,{0,4800},{0,4800},0,.25,.25);
+ require(initialized.valid&&!initialized.soft.dry.riseAvailable&&!initialized.soft.wet.riseAvailable&&initialized.soft.dry.envelopePeak==.5,"initialized window does not fabricate zero-state attack");
+ const auto defaultFrames=dynamics(steady,17),explicitZero=dynamics(steady,17,0);
+ for(size_t i=0;i<defaultFrames.size();++i)require(defaultFrames[i].envelopeRms==explicitZero[i].envelopeRms,"default envelope remains zero initialized");
+ for(double invalid:{-1.,std::numeric_limits<double>::infinity(),std::numeric_limits<double>::quiet_NaN()}) {
+  bool rejected=false;try{dynamics(steady,17,invalid);}catch(const std::invalid_argument&){rejected=true;}require(rejected,"invalid dynamics initial energy rejected");
+  require(!comparePassages(steady,steady,{0,100},{100,200},0,invalid,0).valid&&!comparePassages(steady,steady,{0,100},{100,200},0,0,invalid).valid,"invalid passage initial energies rejected");
+ }
+}
+void passageDynamicsTests() {
+ auto source=sine(2049,997,.4f);Parameters p;p.compressor=p.equalizer=p.drive=true;p.thresholdDb=-30;p.ratio=4;p.lowDb=3;
+ for(int factor:{1,2,4})for(bool bands:{false,true}) {
+  p.oversampling=factor;p.multiband=bands;
+  const auto measured=renderWithDynamics(source,p,128,17);
+  require(measured.wet.samples==render(source,p,257).samples,"timeline audio exactly equals ordinary render");
+  require(measured.wetLatencySamples==(factor==1?0:32),"timeline declares engine latency");
+  Engine engine;engine.prepare(source.sampleRate,2,p);
+  for(std::int64_t n=0;n<source.frames();++n) {
+   float l=0,r=0;const float* in[]={&source.samples[0][n],&source.samples[1][n]};float* out[]={&l,&r};engine.process(in,out,1);
+   if((n+1)%128==0||n+1==source.frames()) {
+    const auto& frame=measured.frames[static_cast<size_t>(n/128)];
+    require(frame.dry.sample==n&&frame.wet.sample==n,"timeline sample positions remain in source time");
+    require(frame.gainReductionDb==engine.gainReductionDb()&&frame.bandGainReductionDb==engine.bandGainReductionDb(),"timeline gain reduction is actual DSP state");
+    require(frame.wetAvailable==(n+measured.wetLatencySamples<source.frames()),"delayed output tail availability explicit");
+   }
+  }
+  if(factor>1) {
+   double energy=0,peak=0;for(int n=32;n<160;++n)for(const auto& ch:measured.wet.samples){energy+=double(ch[n])*ch[n]/2;peak=std::max(peak,std::abs(double(ch[n])));}
+   require(near(measured.frames[0].wet.rms,std::sqrt(energy/128),1e-14)&&measured.frames[0].wet.samplePeak==peak,"wet frame measures delayed output at aligned source interval");
+  }
+ }
+ p={};p.inputDb=6;p.outputDb=-12;source.samples[0][0]=20;
+ const auto trimmed=renderWithDynamics(source,p,17);
+ require(trimmed.dry.samples[0][0]==static_cast<float>(16*std::pow(10.,6./20)),"timeline dry uses clamp before trim");
+ require(trimmed.frames[0].gainReductionDb==0&&trimmed.wet.samples!=trimmed.dry.samples,"output attenuation never masquerades as gain reduction");
+ AudioData levels;levels.samples.assign(2,std::vector<float>(9600,.125f));
+ for(auto& ch:levels.samples)std::fill(ch.begin()+4800,ch.end(),.5f);
+ auto wet=levels;for(auto& ch:wet.samples)for(int n=4800;n<9600;++n)ch[n]*=.5f;
+ const auto contrast=comparePassages(levels,wet,{0,4800},{4800,9600});
+ require(contrast.valid&&contrast.contrastAvailable,"manual soft/hard comparison valid");
+ require(contrast.soft.dry.rms==.125&&contrast.hard.dry.rms==.5&&contrast.hard.wet.rms==.25,"manual passage RMS exact known levels");
+ require(contrast.hard.dry.crestAvailable&&contrast.hard.dry.crestDb==0,"constant signal zero crest factor");
+ require(near(contrast.dryContrastDb,20*std::log10(4.),1e-12)&&near(contrast.contrastChangeDb,-20*std::log10(2.),1e-12),"measured hard soft contrast change in dB");
+ AudioData step;step.samples.assign(1,std::vector<float>(14400,0));std::fill(step.samples[0].begin()+2400,step.samples[0].begin()+7200,.5f);
+ const auto timing=comparePassages(step,step,{0,14400},{3000,7000});
+ require(timing.valid&&timing.soft.dry.riseAvailable&&timing.soft.dry.decayAvailable,"bounded step exposes rise and decay");
+ require(near(timing.soft.dry.riseMs,10*std::log(.99/.19),.03),"10 to 90 percent RMS step rise matches analytic detector law");
+ require(near(timing.soft.dry.decayMs,20*std::log(9.),.03),"90 to 10 percent RMS decay matches analytic detector law");
+ require(!timing.hard.dry.riseAvailable&&!timing.hard.dry.decayAvailable,"selection preserves prior envelope history");
+ auto ramp=step;for(size_t n=0;n<ramp.samples[0].size();++n)ramp.samples[0][n]=static_cast<float>(n/double(ramp.frames()));
+ const auto rampMetrics=comparePassages(ramp,ramp,{0,ramp.frames()},{0,ramp.frames()});
+ require(rampMetrics.soft.dry.riseAvailable&&!rampMetrics.soft.dry.decayAvailable&&rampMetrics.soft.dry.riseMs>100,"ramp descriptive rise has no invented decay");
+ auto silent=step;std::fill(silent.samples[0].begin(),silent.samples[0].end(),0);
+ const auto silence=comparePassages(silent,silent,{0,100},{100,200});
+ require(silence.valid&&!silence.contrastAvailable&&!silence.soft.rmsChangeAvailable&&!silence.soft.dry.crestAvailable&&!silence.soft.dry.riseAvailable,"silence has explicit unavailable ratios/timing");
+ require(!comparePassages(step,step,{-1,100},{0,100}).valid&&!comparePassages(step,step,{0,1},{0,100}).valid&&!comparePassages(step,step,{0,100},{0,step.frames()},32).valid,"invalid or unavailable aligned selections rejected");
+ bool rejected=false;try{renderWithDynamics(step,{},0);}catch(const std::invalid_argument&){rejected=true;}require(rejected,"timeline rejects zero hop");
+ step.samples[0][0]=std::numeric_limits<float>::quiet_NaN();
+ require(!comparePassages(step,step,{0,100},{100,200}).valid,"nonfinite passage rejected");
+ rejected=false;try{renderWithDynamics(step,{});}catch(const std::invalid_argument&){rejected=true;}require(rejected,"timeline finite input matches render policy");
+}
+void faustStageTests() {
+ // Independent scalar compressor definition, including soft-knee boundaries,
+ // detector decay, attack/release switching and ratio-one identity.
+ for(double sr:{44100.,48000.,96000.})for(double knee:{0.,6.,24.})for(double ratio:{1.,4.,20.}) {
+  double detector=0,reduction=0,referenceDetector=0,referenceReduction=0;
+  for(int n=0;n<6000;++n) {
+   const double level=n<2000?.02:n<4000?.8:0.;
+   const double energy=level*level,threshold=-24.,attack=.1,release=100.;
+   const double c=std::exp(-1/(.010*sr));
+   referenceDetector=c*referenceDetector+(1-c)*energy;
+   const double over=10*std::log10(std::max(referenceDetector,1e-30))-threshold,slope=1-1/ratio;
+   double target=0;
+   if(knee>0&&over>-knee/2&&over<knee/2)target=slope*(over+knee/2)*(over+knee/2)/(2*knee);
+   else if(over>=knee/2)target=slope*over;
+   const double ms=target>referenceReduction?attack:release,a=std::exp(-1/(ms*.001*sr));
+   referenceReduction=a*referenceReduction+(1-a)*target;
+   const double actual=detail::compressorStep(energy,detector,reduction,sr,threshold,ratio,attack,release,knee,0);
+   require(near(detector,referenceDetector,2e-13),"Faust RMS detector matches independent recurrence");
+   require(near(reduction,referenceReduction,2e-10),"Faust soft knee and ballistics match independent recurrence");
+   require(near(actual,std::pow(10.,-referenceReduction/20),2e-11),"Faust compressor gain matches independent recurrence");
+   if(ratio==1)require(actual==1,"Faust ratio-one exact identity");
+  }
+ }
+ // RBJ design invariants independently constrain gain and stability.
+ for(double sr:{44100.,48000.,96000.})for(int kind:{0,1,2})for(double db:{-18.,0.,18.})for(double q:{.2,1.,10.}) {
+  double b0,b1,b2,a1,a2;
+  const double hz=kind==0?120.:kind==1?1700.:6000.;
+  detail::eqCoefficients(kind,hz,q,db,sr,b0,b1,b2,a1,a2);
+  require(std::abs(a2)<1&&1+a1+a2>0&&1-a1+a2>0,"Faust EQ coefficient poles stay inside unit circle");
+  auto response=[&](double f) {
+   const auto z=std::polar(1.,-2*detail::pi*f/sr);
+   return std::abs((b0+b1*z+b2*z*z)/(1.+a1*z+a2*z*z));
+  };
+  const double target=std::pow(10.,db/20);
+  require(near(response(kind==0?0.:kind==1?hz:sr/2),target,2e-10),"Faust EQ prescribed shelf/center gain");
+  if(kind!=1)require(near(response(kind==0?sr/2:0.),1.,2e-10),"Faust EQ opposite shelf endpoint unity");
+ }
+ // Verify the generated filter consumes and returns the actual recursive state.
+ double z1=0,z2=0,reference1=0,reference2=0;
+ for(int n=0;n<10000;++n) {
+  const double x=std::sin(n*.73),y=.8*x+reference1;
+  reference1=.2*x-(-.3)*y+reference2;reference2=.1*x-.2*y;
+  const double actual=detail::biquadStep(x,z1,z2,.8,.2,.1,-.3,.2);
+  require(near(actual,y,2e-14)&&near(z1,reference1,2e-14)&&near(z2,reference2,2e-14),"Faust transposed biquad agrees with scalar state oracle");
+ }
+ auto source=sine(2048,997,.7f);
+ Parameters p;p.compressor=p.equalizer=true;p.thresholdDb=-24;p.ratio=4;p.kneeDb=6;p.lowDb=6;p.midDb=-4;p.highDb=3;
+ for(double sr:{44100.,48000.,96000.})for(bool multiband:{false,true}) {
+  source.sampleRate=sr;p.multiband=multiband;p.order={0,1,2};
+  do {
+   const auto expected=render(source,p,128);
+   for(int block:{1,17,63,257,512,1024})require(expected.samples==render(source,p,block).samples,"Faust EQ/compressor all orders are block invariant");
+  }while(std::next_permutation(p.order.begin(),p.order.end()));
+  Engine engine;engine.prepare(sr,2,p);
+  float left[257]{},right[257]{};const float* in[]={left,right};float* out[]={left,right};
+  allocationCount=0;trackAllocations=true;
+  engine.process(in,out,257);
+  auto changed=p;changed.lowDb=-8;changed.attackMs=40;
+  const bool accepted=engine.setParametersRealtime(changed);
+  engine.process(in,out,257);
+  trackAllocations=false;
+  require(accepted&&allocationCount==0,"Faust coefficient refresh and compressor callback allocate nothing");
+ }
+}
 void microscopeTests() {
  Parameters p;p.drive=true;
  auto source=sine(8192,997,.2f);
@@ -95,6 +252,9 @@ int main(){try {
 
  AudioData lowRate;lowRate.sampleRate=8000;lowRate.samples={{.125f,.25f,-.5f}};Parameters lowParams;lowParams.toneHz=3200;require(render(lowRate,lowParams).samples==lowRate.samples,"explicit valid low-rate configuration prepares without default-frequency rejection");
 
+ envelopeHistoryTests();
+ passageDynamicsTests();
+ faustStageTests();
  microscopeTests();
  Parameters p;std::string error;require(validate(p,48000,error),"defaults valid");p.ratio=std::numeric_limits<float>::quiet_NaN();require(!validate(p,48000,error),"NaN rejected");p={};p.order={0,0,2};require(!validate(p,48000,error),"duplicate stage rejected");p={};p.midHz=20000;require(!validate(p,44100,error),"Nyquist parameter rejected");
  auto a=sine();p={};auto unity=render(a,p,17);require(unity.samples==a.samples,"unity identity");p.compressor=true;p.ratio=1;require(render(a,p,257).samples==a.samples,"ratio one identity");p.ratio=4;p.thresholdDb=-18;p.releaseMs=150;auto compressed=render(a,p,1);require(compressed.samples==render(a,p,257).samples,"block invariance");auto measurement=compare(a,compressed,72000,96000,false);require(measurement.valid,"compressor comparison");double gr=20*std::log10(measurement.dryRms/measurement.wetRms);require(gr>6.6&&gr<6.9,"linked RMS steady compressor oracle");require(compressed.samples[0][90001]==-compressed.samples[1][90001],"stereo link preserves polarity");
