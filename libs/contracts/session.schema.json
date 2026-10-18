@@ -139,6 +139,18 @@
           "maximum": 24,
           "default": 0
         },
+        "crossoverLowHz": {
+          "type": "number",
+          "minimum": 20,
+          "maximum": 76800,
+          "default": 200
+        },
+        "crossoverHighHz": {
+          "type": "number",
+          "minimum": 40,
+          "maximum": 86400,
+          "default": 2000
+        },
         "compressor": {
           "type": "boolean",
           "default": false
@@ -150,6 +162,19 @@
         "drive": {
           "type": "boolean",
           "default": false
+        },
+        "multiband": {
+          "type": "boolean",
+          "default": false
+        },
+        "oversampling": {
+          "type": "integer",
+          "enum": [
+            1,
+            2,
+            4
+          ],
+          "default": 1
         },
         "order": {
           "type": "array",
