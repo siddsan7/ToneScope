@@ -207,3 +207,25 @@ test('history pruning never releases a candidate belonging to an in-flight reque
   release();assert.equal((await held).status,'ready');assert.ok(!released.includes('preview_2'));
  }finally{release();await x.cleanup();}
 });
+
+test('lifetime request identity cap rejects before insertion and preserves current duplicate semantics',async()=>{
+ const x=await setup({kind:'replay',async run(){return {status:'noop',reason:'bounded'};}});try{
+  const service=new AssistantService(x.adapter,x.store,{kind:'replay',async run(){return {status:'noop',reason:'bounded'};}},undefined,undefined,{requests:3,deleted_sessions:2});
+  for(let i=0;i<3;i++)assert.equal((await service.run({...request,request_id:'lifetime_'+i})).status,'noop');
+  for(let i=3;i<30;i++)await assert.rejects(service.run({...request,request_id:'lifetime_'+i}),/request_identity_capacity/);
+  assert.equal((service as unknown as {seen:Set<string>}).seen.size,3);await assert.rejects(service.run({...request,request_id:'lifetime_0'}),/duplicate_request/);
+  await service.deleteSession(request.session_id);await assert.rejects(service.run({...request,request_id:'lifetime_0'}),/session_deleted/);
+  assert.throws(()=>new AssistantService(x.adapter,x.store,undefined,undefined,undefined,{requests:0,deleted_sessions:2}),/lifetime_limits_invalid/);
+ }finally{await x.cleanup();}
+});
+test('deleted session cap never evicts in-flight tombstones and repeated deletion stays safe',async()=>{
+ const x=await setup();let started!:()=>void;const entered=new Promise<void>(resolve=>started=resolve);let release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);
+ const provider:Provider={kind:'replay',async run(){started();await gate;return {status:'noop',reason:'late'};}};
+ const service=new AssistantService(x.adapter,x.store,provider,undefined,undefined,{requests:4,deleted_sessions:2});try{
+  const running=service.run({...request,request_id:'deleted_active'});await entered;await service.deleteSession(request.session_id);await service.deleteSession('other');
+  for(let i=0;i<20;i++)await assert.rejects(service.deleteSession('overflow_'+i),/deleted_session_capacity/);
+  assert.equal((service as unknown as {deleting:Set<string>}).deleting.size,2);await service.deleteSession(request.session_id);await assert.rejects(service.run({...request,request_id:'another'}),/session_deleted/);
+  release();assert.equal((await running).status,'canceled');assert.equal(await x.store.load(request.session_id,'deleted_active'),undefined);
+  assert.throws(()=>new AssistantService(x.adapter,x.store,undefined,undefined,undefined,{requests:2,deleted_sessions:Infinity}),/lifetime_limits_invalid/);
+ }finally{release();await x.cleanup();}
+});

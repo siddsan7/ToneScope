@@ -141,6 +141,7 @@ return {status:'ready' as const,preview_id:preview.preview_id,proposal:{schema_v
 }
 }
 export class AssistantService {
+ private lifetimeLimits:{requests:number,deleted_sessions:number};
  private admitted=new Map<string,string>();
  private admissionLimits:{global:number,per_session:number};
  private active=new Map<string,{session:string;
@@ -151,7 +152,7 @@ private deleting=new Set<string>();
 private store:StateStore;
 private provider:Provider;
 private livePolicy?:LivePolicy;
-constructor(native:NativeAdapter,store:StateStore,provider:Provider=new RulesProvider(),livePolicy?:LivePolicy,admissionLimits={global:2,per_session:1}){this.admissionLimits=admissionLimits;for(const value of Object.values(admissionLimits))if(!Number.isSafeInteger(value)||value<=0)throw Error('admission_limits_invalid');this.native=native;
+constructor(native:NativeAdapter,store:StateStore,provider:Provider=new RulesProvider(),livePolicy?:LivePolicy,admissionLimits={global:2,per_session:1},lifetimeLimits={requests:4096,deleted_sessions:256}){this.lifetimeLimits={...lifetimeLimits};for(const value of Object.values(lifetimeLimits))if(!Number.isSafeInteger(value)||value<=0)throw Error('lifetime_limits_invalid');this.admissionLimits={...admissionLimits};for(const value of Object.values(admissionLimits))if(!Number.isSafeInteger(value)||value<=0)throw Error('admission_limits_invalid');this.native=native;
 this.store=store;
 this.provider=provider;
 this.livePolicy=livePolicy;
@@ -159,7 +160,7 @@ this.livePolicy=livePolicy;
  cancel(session:string,request:string){const work=this.active.get(request);
 if(work?.session===session)work.controller.abort(Error('canceled'));
 }
- async deleteSession(session:string){this.deleting.add(session);
+ async deleteSession(session:string){if(!this.deleting.has(session)&&this.deleting.size>=this.lifetimeLimits.deleted_sessions)throw Error('deleted_session_capacity');this.deleting.add(session);
 for(const [id,work] of this.active)if(work.session===session)this.cancel(session,id);
 await this.store.deleteSession(session);
 await this.native.deleteSession?.(session);
@@ -169,6 +170,7 @@ const r=requestSchema.parse(raw);
 if(this.deleting.has(r.session_id))throw Error('session_deleted');
 if(this.seen.has(r.request_id))throw Error('duplicate_request');
 if(this.admitted.size>=this.admissionLimits.global||[...this.admitted.values()].filter(session=>session===r.session_id).length>=this.admissionLimits.per_session)throw Error('assistant_busy');
+if(this.seen.size>=this.lifetimeLimits.requests)throw Error('request_identity_capacity');
 this.admitted.set(r.request_id,r.session_id);try{
 this.seen.add(r.request_id);
 if(await this.store.load(r.session_id,r.request_id))throw Error('duplicate_request');
