@@ -1,10 +1,9 @@
 import {mkdir,writeFile} from 'node:fs/promises';
+import {waitForEmbeddedTarget,waitForEmbeddedFrontend} from './embedded-discovery.mjs';
 
 // Hardware-free test of the actual bundled page and native command boundary.
 const port=Number(process.env.TONESCOPE_WEB_DEBUG_PORT ?? 9337);
-const targets=await(await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-const target=targets.find(value=>value.type==='page'&&value.url.startsWith('https://juce.backend/'));
-if(!target)throw Error('No embedded ToneScope page');
+const target=await waitForEmbeddedTarget(port);
 const socket=new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((resolve,reject)=>{socket.onopen=resolve;socket.onerror=reject;});
 let sequence=0;
@@ -51,6 +50,7 @@ async function clickText(text,role='button'){
   await call('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',clickCount:1});
 }
 await call('Runtime.enable');
+await waitForEmbeddedFrontend(evaluate);
 const first=await settled();
 if(first.callbackProfile){
   if(first.callbackProfile.enabled||first.callbackProfile.count!==0)throw Error('Callback probe must start disabled and empty');

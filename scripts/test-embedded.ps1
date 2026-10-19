@@ -34,10 +34,10 @@ $child=Start-Process -FilePath $app -ArgumentList $arguments -WindowStyle Hidden
     $ready=$false
     for($attempt=0;$attempt -lt 80;$attempt++){
         if($child.HasExited){throw 'Native UI test process exited before WebView startup'}
-        try {$targets=Invoke-RestMethod "http://127.0.0.1:$Port/json/list" -TimeoutSec 1;if(@($targets | Where-Object type -eq 'page').Count){$ready=$true;break}}catch{}
+        try {$targets=Invoke-RestMethod "http://127.0.0.1:$Port/json/list" -TimeoutSec 1;if(@($targets | Where-Object { $_.type -eq 'page' -and $_.url -is [string] -and $_.url.StartsWith('https://juce.backend/') -and $_.webSocketDebuggerUrl -is [string] -and $_.webSocketDebuggerUrl.StartsWith('ws://') }).Count){$ready=$true;break}}catch{}
         Start-Sleep -Milliseconds 250
     }
-    if(-not $ready){throw 'Embedded WebView2 did not expose its explicit test endpoint'}
+    if(-not $ready){throw 'Embedded WebView2 did not expose the actual ToneScope page on its explicit test endpoint'}
     $env:TONESCOPE_WEB_DEBUG_PORT="$Port"
     node tests/ui/embedded-native.mjs
     if($LASTEXITCODE -ne 0){throw 'Embedded native bridge probe failed'}

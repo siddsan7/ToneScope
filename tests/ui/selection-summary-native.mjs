@@ -1,8 +1,7 @@
 import {mkdir,writeFile} from 'node:fs/promises';
+import {waitForEmbeddedTarget,waitForEmbeddedFrontend} from './embedded-discovery.mjs';
 const port=Number(process.env.TONESCOPE_WEB_DEBUG_PORT??9337);
-const targets=await(await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-const target=targets.find(t=>t.type==='page'&&t.url.startsWith('https://juce.backend/'));
-if(!target)throw Error('No actual embedded page');
+const target=await waitForEmbeddedTarget(port);
 const socket=new WebSocket(target.webSocketDebuggerUrl);
 await new Promise((resolve,reject)=>{socket.onopen=resolve;socket.onerror=reject;});
 let id=0;const pending=new Map();
@@ -15,6 +14,7 @@ const current=async()=>{for(let n=0;n<150;n++){const s=await invoke('snapshot');
 const activate=async text=>{await evaluate(`(()=>{const b=[...document.querySelectorAll('.selection-summary button')].find(b=>b.textContent.trim()===${JSON.stringify(text)});if(!b||b.disabled)throw Error('Missing enabled summary button');b.scrollIntoView();b.focus()})()`);await call('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r',unmodifiedText:'\r'});await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});};
 try {
   await call('Runtime.enable');await call('Page.enable');
+  await waitForEmbeddedFrontend(evaluate);
   // A deterministic speech double proves routing/cancellation, never audible or
   // screen-reader quality. Real native selection/audio evidence stays untouched.
   await call('Page.addScriptToEvaluateOnNewDocument',{source:`(()=>{

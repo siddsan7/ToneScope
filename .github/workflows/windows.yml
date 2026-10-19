@@ -26,6 +26,8 @@ jobs:
             services/audio-assistant/package-lock.json
       - run: npm ci --ignore-scripts
         working-directory: services/audio-assistant
+      - name: Embedded page discovery regressions
+        run: node --test tests/ui/embedded-discovery.test.mjs
       - run: ./scripts/bootstrap.ps1
       - run: ./scripts/bootstrap-faust.ps1
       - run: ./.tools/python/cmake/data/bin/cmake.exe --preset windows-dev
