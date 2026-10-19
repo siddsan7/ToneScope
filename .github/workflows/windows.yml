@@ -34,11 +34,17 @@ jobs:
       - name: Native app startup without opening hardware
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force artifacts/smoke | Out-Null
-          $output = Join-Path $PWD 'artifacts/smoke/native.png'
-          $app = Start-Process -FilePath 'build/windows-dev/ToneScope_artefacts/Release/ToneScope.exe' -ArgumentList @('--demo','--screenshot',('"'+$output+'"')) -WindowStyle Hidden -PassThru
-          if (-not $app.WaitForExit(30000)) { Stop-Process -Id $app.Id; throw 'Native startup timed out' }
-          if ($app.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $output)) { throw 'Native startup did not produce its software smoke artifact' }
+          ./scripts/test-startup.ps1 -CheckSingleton
+          ./scripts/test-ui-smoke-guards.ps1
+      - name: Embedded UI and offline assistant workflow
+        shell: pwsh
+        run: |
+          ./scripts/test-embedded.ps1 -Assistant -SelectionSummary
+          New-Item -ItemType Directory -Force artifacts/frontend-native-standard | Out-Null
+          Copy-Item artifacts/frontend-native/*.json,artifacts/frontend-native/embedded.png artifacts/frontend-native-standard/
+          ./scripts/test-embedded.ps1 -Assistant -MetricsOnly
+          New-Item -ItemType Directory -Force artifacts/frontend-native-streamed | Out-Null
+          Copy-Item artifacts/frontend-native/*.json,artifacts/frontend-native/embedded.png artifacts/frontend-native-streamed/
       - run: npm run typecheck && npm test && npm run build
         working-directory: services/audio-assistant
         shell: cmd
@@ -46,6 +52,10 @@ jobs:
         working-directory: apps/frontend
         shell: cmd
       - run: python -m unittest discover -s tests/integration -v
+      - name: Frozen native level experiment with paid execution disabled
+        run: python evals/level_eval.py --cli "${{ env.TONESCOPE_TEST_CLI }}" --output artifacts/level-evaluation
+      - name: Frozen constrained compression experiment with paid execution disabled
+        run: python evals/compression_eval.py --cli "${{ env.TONESCOPE_TEST_CLI }}" --output artifacts/compression-evaluation
       - name: Nightly public musical DI regression
         if: github.event_name == 'schedule'
         shell: pwsh

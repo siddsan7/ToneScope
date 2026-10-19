@@ -1,0 +1,66 @@
+import {mkdir,writeFile} from 'node:fs/promises';
+const port=Number(process.env.TONESCOPE_WEB_DEBUG_PORT??9337);
+const targets=await(await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+const target=targets.find(t=>t.type==='page'&&t.url.startsWith('https://juce.backend/'));
+if(!target)throw Error('No actual embedded page');
+const socket=new WebSocket(target.webSocketDebuggerUrl);
+await new Promise((resolve,reject)=>{socket.onopen=resolve;socket.onerror=reject;});
+let id=0;const pending=new Map();
+socket.onmessage=e=>{const m=JSON.parse(e.data),p=pending.get(m.id);if(p){pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}};
+const call=(method,params={})=>new Promise((resolve,reject)=>{const n=++id,t=setTimeout(()=>{pending.delete(n);reject(Error('CDP timeout '+method));},15000);pending.set(n,{resolve:v=>{clearTimeout(t);resolve(v);},reject:e=>{clearTimeout(t);reject(e);}});socket.send(JSON.stringify({id:n,method,params}));});
+const evaluate=async expression=>{const r=await call('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});if(r.exceptionDetails)throw Error(JSON.stringify(r.exceptionDetails));return r.result.value;};
+const invoke=(action,payload={})=>{const n=2000000+id;return evaluate(`new Promise(resolve=>{window.__JUCE__.backend.addEventListener('__juce__complete',v=>{if(v.promiseId===${n})resolve(v.result)});window.__JUCE__.backend.emitEvent('__juce__invoke',{name:'tonescopeCommand',params:[{version:1,action:${JSON.stringify(action)},...${JSON.stringify(payload)}}],resultId:${n}})})`);};
+const wait=async(expression,label)=>{for(let n=0;n<100;n++){if(await evaluate(expression))return;await new Promise(r=>setTimeout(r,100));}const diagnostics=await evaluate(`({hidden:document.hidden,focused:document.hasFocus(),active:document.activeElement?.outerHTML,speech:window.__summarySpeechTest,summary:document.querySelector('.selection-summary')?.innerText})`);throw Error('Summary UI timeout: '+label+'; '+JSON.stringify(diagnostics));};
+const current=async()=>{for(let n=0;n<150;n++){const s=await invoke('snapshot');if(s.ready&&!s.busy&&s.selectionSummary?.available)return s;await new Promise(r=>setTimeout(r,100));}throw Error('Native summary did not become current');};
+const activate=async text=>{await evaluate(`(()=>{const b=[...document.querySelectorAll('.selection-summary button')].find(b=>b.textContent.trim()===${JSON.stringify(text)});if(!b||b.disabled)throw Error('Missing enabled summary button');b.scrollIntoView();b.focus()})()`);await call('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r',unmodifiedText:'\r'});await call('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});};
+try {
+  await call('Runtime.enable');await call('Page.enable');
+  // A deterministic speech double proves routing/cancellation, never audible or
+  // screen-reader quality. Real native selection/audio evidence stays untouched.
+  await call('Page.addScriptToEvaluateOnNewDocument',{source:`(()=>{
+    const events=new EventTarget();const s={calls:[],cancels:0,voices:[{localService:true,lang:'en-US',default:true,name:'LOCAL TEST DOUBLE'}]};
+    const api={getVoices:()=>s.voices,speak:u=>s.calls.push({text:u.text,local:u.voice.localService}),cancel:()=>s.cancels++,addEventListener:(...a)=>events.addEventListener(...a),removeEventListener:(...a)=>events.removeEventListener(...a)};
+    s.changed=()=>events.dispatchEvent(new Event('voiceschanged'));window.__summarySpeechTest=s;
+    Object.defineProperty(window,'speechSynthesis',{value:api,configurable:true});Object.defineProperty(window,'SpeechSynthesisUtterance',{value:function(text){this.text=text;},configurable:true});
+  })()`});
+  await call('Page.reload');
+  await call('Page.bringToFront');
+  await wait(`!!document.querySelector('.selection-summary')&&!!window.__summarySpeechTest`,'mounted');
+  await invoke('pause');await invoke('assistant.dismiss');await invoke('selection',{from:.1,to:.9});
+  const state=await current();
+  if(!state.selectionSummary?.available)throw Error('Native scalar evidence unavailable');
+  await wait(`(()=>{const rows=[...document.querySelectorAll('.selection-summary dl>div')];return rows.some(x=>x.querySelector('dt').textContent==='Processed RMS'&&x.querySelector('dd').textContent===${JSON.stringify((20*Math.log10(state.selectionSummary.wetRms)).toFixed(1)+' dBFS')})})()`,'actual processed RMS');
+  if(await evaluate('window.__summarySpeechTest.calls.length')!==0)throw Error('Speech started without user action');
+  await activate('Read summary aloud');await wait('window.__summarySpeechTest.calls.length===1','keyboard speech');
+  await new Promise(r=>setTimeout(r,450));
+  if(await evaluate('window.__summarySpeechTest.calls.length!==1||window.__summarySpeechTest.cancels!==0'))throw Error('Polling restarted/stopped speech');
+  if((await invoke('snapshot')).playing)throw Error('Summary keyboard action started playback');
+  await activate('Stop reading');await wait('window.__summarySpeechTest.cancels===1','explicit stop');
+  await activate('Read summary aloud');await invoke('selection',{from:.2,to:.8});await wait('window.__summarySpeechTest.cancels===2','selection invalidation');
+  const changed=await current();
+  await wait(`document.querySelector('.selection-summary dd').textContent===${JSON.stringify(`${(Math.trunc(.2*changed.sourceFrames)/changed.sampleRate).toFixed(2)} to ${(Math.trunc(.8*changed.sourceFrames)/changed.sampleRate).toFixed(2)} seconds`)}&&[...document.querySelectorAll('.selection-summary dd')].some(x=>x.textContent.endsWith('dBFS'))`,'new summary ready');
+  await activate('Read summary aloud');await invoke('play');await wait('window.__summarySpeechTest.cancels===3','playback cancellation');await invoke('pause');
+  await evaluate(`window.__summarySpeechTest.voices=[{localService:false,lang:'en-US',default:true}];window.__summarySpeechTest.changed()`);
+  await wait(`document.querySelector('.selection-summary button').disabled&&document.getElementById('summary-speech-help').textContent.includes('unavailable')`,'remote voice refused');
+  const count=await evaluate('window.__summarySpeechTest.calls.length');
+  await new Promise(r=>setTimeout(r,250));if(await evaluate('window.__summarySpeechTest.calls.length')!==count)throw Error('Remote voice fallback');
+  await evaluate(`window.__summarySpeechTest.voices=[{localService:true,lang:'en-US',default:true}];window.__summarySpeechTest.changed()`);
+  await wait(`!document.querySelector('.selection-summary button').disabled`,'local voice restored');
+  await activate('Read summary aloud');
+  await evaluate(`Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});document.dispatchEvent(new Event('visibilitychange'))`);
+  await wait('window.__summarySpeechTest.cancels===4','hidden page cancellation');
+  await evaluate(`delete document.hidden`);
+  await call('Accessibility.enable');
+  const ax=await call('Accessibility.getFullAXTree');
+  if(!ax.nodes.some(n=>n.role?.value==='region'&&n.name?.value==='Selection summary')||!ax.nodes.some(n=>n.role?.value==='button'&&n.name?.value==='Read summary aloud'))throw Error('Summary is absent from the accessibility tree');
+  await call('Emulation.setEmulatedMedia',{media:'screen',features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+  await evaluate(`document.documentElement.style.fontSize='26px';document.documentElement.dataset.largeText='true'`);
+  const layout=await evaluate(`(()=>{const s=document.querySelector('.selection-summary');const box=s.getBoundingClientRect();return {overflow:document.documentElement.scrollWidth>innerWidth+1,summaryOverflow:s.scrollWidth>s.clientWidth+1,width:box.width,live:s.getAttribute('aria-live'),heading:!!s.querySelector('#selection-summary-title')}})()`);
+  if(layout.overflow||layout.summaryOverflow||layout.live||!layout.heading)throw Error('Summary text scaling or announcement structure failed: '+JSON.stringify(layout));
+  await mkdir('artifacts/selection-summary',{recursive:true});
+  const evidence={status:'pass',scope:'Actual embedded summary/native data; speech routing uses a deterministic double, no audible voice or human screen-reader qualification',nativeRevision:state.revision,processedRms:state.selectionSummary.wetRms,keyboardSpeech:true,noAutomaticSpeech:true,stablePolling:true,selectionCancels:true,playbackCancels:true,hiddenPageCancels:true,accessibilityTree:true,remoteVoiceRefused:true,textScale:200,layout};
+  await writeFile('artifacts/selection-summary/embedded-summary.json',JSON.stringify(evidence,null,2)+'\n');
+  const screenshot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});
+  await writeFile('artifacts/selection-summary/embedded-summary.png',Buffer.from(screenshot.data,'base64'));
+  console.log(JSON.stringify(evidence));
+} finally {socket.close();}

@@ -73,17 +73,27 @@ await settled();
 const evidence={target:target.url,source:first.source,duration:first.duration,sourceFrames:first.sourceFrames,inspectionOffset:first.inspectionOffset,inspectionEnd:first.inspectionEnd,streamedSource:first.streamedSource,nativeControls:first.controls.length,measuredWaveformBins:first.dryPeaks.length,parameterAccepted:true,undoRestored:true,invalidRejected:true};
 
 if(process.env.TONESCOPE_TEST_ASSISTANT==='1'){
+  const metricsOnly=process.env.TONESCOPE_TEST_METRICS_ONLY==='1';
+  const requestFrom=metricsOnly?0:.05,requestTo=metricsOnly?.1:.95;
   await invoke('parameter',{key:'thresholdDb',value:-36});
   await invoke('stage',{index:0,value:true});
   await settled();
-  await invoke('selection',{from:.05,to:.4});await settled();
+  await invoke('selection',metricsOnly?{from:0,to:.03}:{from:.05,to:.4});await settled();
   await invoke('microscope.soft');
-  await invoke('selection',{from:.8,to:.95});await settled();
+  await invoke('selection',metricsOnly?{from:.055,to:.065}:{from:.8,to:.95});await settled();
   await invoke('microscope.hard');
+  // Streaming caches follow the selection. First cover both marks to retain
+  // the existing independently measured contrast assertions, then expand past
+  // the cache for the metrics-only assistant request below.
+  if(metricsOnly){await invoke('selection',{from:0,to:.08});await settled();}
   const measured=await waitFor(state=>state.microscope?.current&&state.microscope.measurements?.valid,'manual passage measurements');
   if(!(measured.microscope.measurements.dryContrastDb>10)||!measured.gainReductionHistory.some(value=>value>0))throw Error('Actual soft/hard dynamics or GR missing');
-  await invoke('selection',{from:.05,to:.95});await settled();
+  await invoke('selection',{from:requestFrom,to:requestTo});await settled();
   const requestBase=await invoke('snapshot');
+  if(metricsOnly){
+    if(!requestBase.streamedSource||requestBase.sourceFrames*(requestTo-requestFrom)<=requestBase.inspectionEnd-requestBase.inspectionOffset)throw Error('Metrics-only regression did not exceed the streamed inspection cache');
+    evidence.metricsOnlyManualPassages=true;
+  }
   await new Promise(resolve=>setTimeout(resolve,200));
   await clickText('Assistant','tab');
   await evaluate(`document.getElementById('assistant-prompt').focus()`);

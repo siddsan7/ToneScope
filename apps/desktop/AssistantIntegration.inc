@@ -10,8 +10,18 @@ int assistantOriginalMode=2;bool assistantOriginalMatch=false,assistantAuditioni
 
 bool assistantPreviewActive() const{return assistantAuditioning;}
 
+juce::var assistantPassages(bool metricsOnly=false) const {
+ // Long selections have exact overall metrics but no cached passage audio.
+ // Omit unavailable evidence so level requests remain usable; compression abstains.
+ if(metricsOnly)return {};
+ if(!softPassage||!hardPassage||softPassage->source!=passageSourceKey()||hardPassage->source!=passageSourceKey())return {};
+ const auto soft=softPassage->interval,hard=hardPassage->interval;
+ if(soft.start<selectionStart.load()||hard.start<selectionStart.load()||soft.end>selectionEnd.load()||hard.end>selectionEnd.load()||soft.end-soft.start<2||hard.end-hard.start<2||!(soft.end<=hard.start||hard.end<=soft.start))return {};
+ return tonescope::desktop::assistant::object({{"origin","manual"},{"soft",juce::Array<juce::var>{(juce::int64)soft.start,(juce::int64)soft.end}},{"hard",juce::Array<juce::var>{(juce::int64)hard.start,(juce::int64)hard.end}}});
+}
+
 bool assistantCurrent(const tonescope::desktop::assistant::Context& context) const {
- return source&&context.revision==revision&&context.sourceHash==sourceDigest&&context.graphHash==tonescope::session::hashParameters(parameters())&&context.sourceFile==sourceFile&&context.first==selectionStart.load()&&context.last==selectionEnd.load()&&!monitoring.load()&&!busy&&auditionBand==0;
+ return source&&context.revision==revision&&context.sourceHash==sourceDigest&&context.graphHash==tonescope::session::hashParameters(parameters())&&context.sourceFile==sourceFile&&context.first==selectionStart.load()&&context.last==selectionEnd.load()&&juce::JSON::toString(context.passages)==juce::JSON::toString(assistantPassages(context.metricsOnly))&&!monitoring.load()&&!busy&&auditionBand==0;
 }
 void restoreAssistantAudition(){
  if(!assistantAuditioning)return;
@@ -81,6 +91,7 @@ juce::var handleAssistantCommand(const juce::String& action,const juce::var& inp
    assistantSessionChanged();
    Context context;context.sessionId=assistantBridge->sessionId();context.requestId=juce::Uuid().toDashedString();context.sourceHash=sourceDigest;context.graphHash=tonescope::session::hashParameters(parameters());context.sourceFile=sourceFile;context.revision=revision;context.first=selectionStart.load();context.last=selectionEnd.load();context.sampleRate=sourceSampleRate();context.cacheOffset=inspectionOffset;context.alignment=rendered->latency;context.parameters=parameters();context.rawWet=rendered->exportWet;context.descriptors=tonescope::session::parameterDescriptors(context.parameters,context.sampleRate);context.metricsOnly=context.first<context.cacheOffset||context.last-context.cacheOffset+context.alignment>context.rawWet->frames();context.baselineRms=rendered->comparison.wetRms;context.baselinePeak=rendered->comparison.peak/std::max(1e-12,rendered->comparison.gain);
    require(context.last>context.first&&context.last+context.alignment<=int64_t(context.sampleRate*30),"Choose a passage whose processing from source start fits the assistant's thirty-second budget.");
+   context.passages=assistantPassages(context.metricsOnly);
    assistantContext=context;assistantState="running";assistantMessage="Reading native measurements and evaluating a local candidate...";
    const auto generation=assistantGeneration;auto safe=juce::Component::SafePointer<Main>(this);auto bridge=assistantBridge;auto base=rendered;
    bridge->request(context,input["prompt"].toString(),[safe,bridge,context,generation,base](juce::var response,juce::String error){

@@ -35,18 +35,20 @@ bool validate(const Parameters& p,double sr,std::string& error) {
  error.clear();return true;
 }
 struct Engine::Impl {
- double sr=48000,smooth=0,rms=0,gr=0;int channels=0;Parameters p;std::array<float,17> current=values(p),target=current;
+ double sr=48000,smooth=0,gr=0;int channels=0;Parameters p;std::array<float,17> current=values(p),target=current;
  tonescope_faust::ToneScopeDrive shaper;
  detail::ThreeBand crossover[2]; detail::Fir up[2],down[2];
- double bandRms[3]{},bandGr[3]{};
+ detail::Compressor compressor, bandCompressors[3];
+ double bandGr[3]{};
  void prepareModes() noexcept {
   for(int c=0;c<2;++c) {
    crossover[c]={}; crossover[c].prepare(p.crossoverLowHz,p.crossoverHighHz,sr);
    up[c].prepare(p.oversampling); down[c].prepare(p.oversampling);
   }
  }
- double compress(double energy, double& detector, double& reduction, const std::array<float,17>& v) noexcept {
-  return detail::compressorStep(energy,detector,reduction,sr,v[1],v[2],v[3],v[4],v[5],v[6]);
+ std::array<double,2> compress(detail::Compressor& graph, double left, double right,
+                             const std::array<float,17>& v) noexcept {
+  return graph.tick(left,right,sr,v[1],v[2],v[3],v[4],v[5],v[6]);
  }
  Biquad eq[2][3];std::array<float,5> eqParameters{};double prev[2]{},lp[2]{},dcx[2]{},dcy[2]{};std::uint64_t faults=0;
 };
@@ -63,8 +65,9 @@ void Engine::prepare(double sr,int channels,const Parameters& initial) {
 }
 void Engine::reset() {
  auto& d=*impl;
- d.rms=d.gr=0;d.prepareModes();
- for(int i=0;i<3;++i)d.bandRms[i]=d.bandGr[i]=0;
+ d.gr=0;d.prepareModes();
+ d.compressor.prepare(d.sr);
+ for(int i=0;i<3;++i) {d.bandCompressors[i].prepare(d.sr);d.bandGr[i]=0;}
  d.current=d.target;d.faults=0;
  d.eqParameters.fill(std::numeric_limits<float>::quiet_NaN());
  for(int c=0;c<2;++c) {
@@ -101,16 +104,19 @@ void Engine::process(const float* const* input,float* const* output,int frames) 
     if(d.p.multiband) {
      std::array<double,3> bands[2]{};
      for(int c=0;c<d.channels;++c) bands[c]=d.crossover[c].tick(x[c]);
-     double gains[3]{};
+     std::array<double,2> compressed[3]{};
      for(int b=0;b<3;++b) {
-      double energy=0;for(int c=0;c<d.channels;++c)energy+=bands[c][b]*bands[c][b]/d.channels;
-      gains[b]=d.compress(energy,d.bandRms[b],d.bandGr[b],v);
+      // Duplicating mono preserves the mean-channel-energy detector law.
+      compressed[b]=d.compress(d.bandCompressors[b],bands[0][b],
+                              bands[d.channels==1?0:1][b],v);
+      d.bandGr[b]=d.bandCompressors[b].reduction;
      }
      d.gr=*std::max_element(std::begin(d.bandGr),std::end(d.bandGr));
-     for(int c=0;c<d.channels;++c) {x[c]=0;for(int b=0;b<3;++b)x[c]+=bands[c][b]*gains[b];}
+     for(int c=0;c<d.channels;++c) {x[c]=0;for(int b=0;b<3;++b)x[c]+=compressed[b][c];}
     } else {
-     double energy=0;for(int c=0;c<d.channels;++c)energy+=x[c]*x[c]/d.channels;
-     const double g=d.compress(energy,d.rms,d.gr,v);for(int c=0;c<d.channels;++c)x[c]*=g;
+     const auto compressed=d.compress(d.compressor,x[0],x[d.channels==1?0:1],v);
+     d.gr=d.compressor.reduction;
+     for(int c=0;c<d.channels;++c)x[c]=compressed[c];
     }
    }
    if(stage==1&&d.p.equalizer) {

@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "corpus_sha256": "24012c5c889636662907b4401051ac7ffd687e6fc6287651e47178fad4c83c70",
+  "review_rule": "Changes require explicit corpus and baseline review; this is inspectable development data, not a holdout."
+}

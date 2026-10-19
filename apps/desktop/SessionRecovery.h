@@ -13,7 +13,10 @@ inline bool saveSessionAtomically(const juce::File& destination,const juce::Stri
     try{session::loadParameters(temporary.getFile());}catch(...){return false;}
     return temporary.overwriteTargetFileWithTemporary();
 }
-inline juce::File recoveryDirectory(){return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile("ToneScope/recovery");}
+// Set once during application startup, before UI/worker creation. Normal apps
+// keep the original directory; hardware-free probes cannot replace that state.
+inline juce::String recoveryStorageNamespace="ToneScope/recovery";
+inline juce::File recoveryDirectory(){return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory).getChildFile(recoveryStorageNamespace);}
 // Only the exact 44-byte float32 stereo writer format produced by CaptureWorker
 // is recoverable. Copy first: never rewrite the original interrupted take.
 inline juce::File recoverInterruptedCapture(const juce::File& partial) {

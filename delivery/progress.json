@@ -271,7 +271,11 @@
     "Code-signing identity and clean-machine install qualification",
     "Optional provider credentials, consent and budget for live D3 evaluation"
   ],
-  "software_next": [],
+  "software_next": [
+    "Collect independently recorded model actions for the implemented frozen native level experiment after explicit provider consent/pricing; paid execution remains disabled.",
+    "Broaden the implemented constrained compression experiment with independent musical/generalization evidence; attack or perceptual claims require separate qualification.",
+    "Qualify the implemented selection-summary prototype with human Narrator/keyboard sessions and actual local speech/listening; retain explicit unavailable states."
+  ],
   "limitations": [
     "Implemented software remains unsigned and unqualified for production; physical/human/live-model release gates remain required",
     "RMS and sample peak are not perceptual loudness or true peak",
@@ -284,5 +288,17 @@
     "review": "Independent assigned agent review, exact composition; PR4 comments and artifacts/integration-review/",
     "ci": "Passing exact-head Windows and Linux sanitizer checks required before merge",
     "package": "Fresh allowlist package with binary/build/dependency hashes; private unsigned development only"
+  },
+  "presentation_next": [
+    "Record and caption the planned 60–90 second desktop walkthrough; the local listening bench is implemented."
+  ],
+  "followup_records": {
+    "integration_closeout": "delivery/integration-closeout.md",
+    "selection_summary": "delivery/selection-summary.md",
+    "compression_benchmark": "delivery/compression-benchmark.md",
+    "native_level_evaluation": "delivery/ai-level-evaluation.md",
+    "presentation_and_stateful_compressor": "delivery/stateful-compressor.md",
+    "desktop_startup": "delivery/desktop-startup.md",
+    "note": "Earlier verification fields retain the original PR4 delivery evidence; working-tree followups have separate current records."
   }
 }

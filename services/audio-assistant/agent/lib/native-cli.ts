@@ -4,7 +4,7 @@ import { createHash,randomUUID } from 'node:crypto';
 import { readFile,mkdir,writeFile,rm,lstat } from 'node:fs/promises';
 import { isAbsolute,join } from 'node:path';
 import { z } from 'zod';
-import { baselineMetricsSchema,snapshotSchema,type NativeAdapter,type Snapshot,type Patch,type Preview } from './contracts.ts';
+import { baselineMetricsSchema,snapshotSchema,type NativeAdapter,type Snapshot,type Patch,type Preview,type Measurement } from './contracts.ts';
 export type NativeAsset={snapshot:Snapshot;
 source_path:string;
 baseline_path?:string;
@@ -47,9 +47,13 @@ if(!a||JSON.stringify(a.snapshot)!==JSON.stringify(s))throw Error('stale_native_
 return a;
 }
  private async verify(a:NativeAsset,signal:AbortSignal){signal.throwIfAborted();
+snapshotSchema.parse(a.snapshot);
+if(a.snapshot.processing)for(const key of ['compressor','multiband','equalizer','drive'] as const){
+if(a.snapshot.processing[key] !== (a.parameters[key]??false))throw Error('processing_binding_mismatch');
+}
 if(!isAbsolute(a.source_path)||(a.baseline_path&&!isAbsolute(a.baseline_path)))throw Error('absolute_host_paths_required');
 if(await digest(a.source_path,signal)!==a.snapshot.source_sha256)throw Error('source_digest_mismatch');
-if(!a.baseline_path){this.metrics(a);signal.throwIfAborted();return;}
+if(!a.baseline_path){this.metrics(a);if(a.snapshot.passages)throw Error('passage_evidence_unavailable');signal.throwIfAborted();return;}
 const m=manifest.parse(JSON.parse(await readFile(a.baseline_path+'.json','utf8')));
 if(m.source_sha256!==a.snapshot.source_sha256||m.graph_sha256!==a.snapshot.base_graph_sha256||await digest(a.baseline_path,signal)!==m.artifact_sha256)throw Error('baseline_digest_mismatch');
 const selected=m.selection_samples??[0,m.frames];
@@ -58,9 +62,26 @@ if(m.sample_rate_hz!==a.snapshot.sample_rate)throw Error('sample_rate_mismatch')
 signal.throwIfAborted();
 }
  private metrics(a:NativeAsset){
- const m=baselineMetricsSchema.parse(a.baseline_metrics);const expected={session_id:a.snapshot.session_id,session_revision:a.snapshot.session_revision,source_sha256:a.snapshot.source_sha256,base_graph_sha256:a.snapshot.base_graph_sha256,selection_samples:a.snapshot.selection_samples,sample_rate:a.snapshot.sample_rate};
+ const m=baselineMetricsSchema.parse(a.baseline_metrics);const expected={session_id:a.snapshot.session_id,session_revision:a.snapshot.session_revision,source_sha256:a.snapshot.source_sha256,base_graph_sha256:a.snapshot.base_graph_sha256,selection_samples:a.snapshot.selection_samples,sample_rate:a.snapshot.sample_rate,...(a.snapshot.passages?{passages:a.snapshot.passages}:{}),...(a.snapshot.processing?{processing:a.snapshot.processing}:{})};
  if(a.baseline_path||JSON.stringify(m.binding)!==JSON.stringify(expected))throw Error('baseline_binding_mismatch');
  const alignment=a.parameters.drive===true&&Number(a.parameters.oversampling??1)>1?32:0;if(m.alignment_samples!==alignment)throw Error('baseline_alignment_mismatch');return m;
+ }
+ private async passageMeasurements(s:Snapshot,path:string,signal:AbortSignal,prefix=''):Promise<Measurement[]>{
+if(!s.passages)return [];
+const result:Measurement[]=[];
+let soft:number|undefined,hard:number|undefined;
+for(const name of ['soft','hard'] as const){
+const [start,end]=s.passages[name].map(n=>n-s.selection_samples[0]);
+const measured=comparison.parse(await this.invoke(['compare','--dry',path,'--wet',path,'--start',String(start),'--end',String(end)],signal));
+if(measured.dryRms>=1e-9){
+const value=db(measured.dryRms);
+result.push({measurement_id:prefix+name+'_rms_dbfs',value,unit:'dBFS'});
+if(name==='soft')soft=value;else hard=value;
+}
+result.push({measurement_id:prefix+name+'_peak_dbfs',value:db(measured.peak),unit:'dBFS'});
+}
+if(soft!==undefined&&hard!==undefined)result.push({measurement_id:prefix+'hard_soft_contrast_db',value:hard-soft,unit:'dB'});
+return result;
  }
  async snapshot(session:string,signal:AbortSignal){const assets=typeof this.assets==='function'?await this.assets():this.assets;
 const a=assets.get(session);
@@ -71,8 +92,11 @@ return structuredClone(a.snapshot);
 }
  async measurements(s:Snapshot,signal:AbortSignal){const a=await this.asset(s);
 await this.verify(a,signal);
+if(s.passages&&!a.baseline_path)throw Error('passage_evidence_unavailable');
 const measured=a.baseline_path?z.object({rms:finite,peak:finite}).parse(await this.invoke(['inspect','--source',a.baseline_path],signal)):this.metrics(a);
-return [{measurement_id:'rms_dbfs',value:db(measured.rms),unit:'dBFS'},{measurement_id:'peak_dbfs',value:db(measured.peak),unit:'dBFS'}];
+const passages=a.baseline_path?await this.passageMeasurements(s,a.baseline_path,signal):[];
+await this.verify(a,signal);
+return [{measurement_id:'rms_dbfs',value:db(measured.rms),unit:'dBFS' as const},{measurement_id:'peak_dbfs',value:db(measured.peak),unit:'dBFS' as const},...passages];
 }
  async renderFrameCost(s:Snapshot,signal:AbortSignal){const a=await this.asset(s);
 await this.verify(a,signal);
@@ -96,9 +120,11 @@ try{await writeFile(config,JSON.stringify({schema_version:1,source_sha256:s.sour
 const m=manifest.parse(await this.invoke(['render','--source',a.source_path,'--out',output,'--session',config,'--block-size','257',...((!a.baseline_path||s.selection_samples[0]!==0||Array.isArray(JSON.parse(await readFile(a.baseline_path+'.json','utf8')).selection_samples))?['--start',String(s.selection_samples[0]),'--end',String(s.selection_samples[1])]:[])],signal));
 if((m.processed_frames??m.frames)!==await this.renderFrameCost(s,signal)||m.frames!==s.selection_samples[1]-s.selection_samples[0]||m.sample_rate_hz!==s.sample_rate||m.source_sha256!==s.source_sha256||await digest(output,signal)!==m.artifact_sha256)throw Error('preview_manifest_mismatch');
 const measured=z.object({rms:finite,peak:finite}).parse(await this.invoke(['inspect','--source',output],signal));
+const passages=await this.passageMeasurements(s,output,signal,'preview_');
+if(await digest(output,signal)!==m.artifact_sha256)throw Error('preview_manifest_mismatch');
 signal.throwIfAborted();
 this.previews.set(preview_id,{path:output,session:s.session_id,revision:s.session_revision});
-return {preview_id,audio_sha256:m.artifact_sha256,session_revision:s.session_revision,measurements:[{measurement_id:'preview_rms_dbfs',value:db(measured.rms),unit:'dBFS'},{measurement_id:'preview_peak_dbfs',value:db(measured.peak),unit:'dBFS'}]};
+return {preview_id,audio_sha256:m.artifact_sha256,session_revision:s.session_revision,measurements:[{measurement_id:'preview_rms_dbfs',value:db(measured.rms),unit:'dBFS' as const},{measurement_id:'preview_peak_dbfs',value:db(measured.peak),unit:'dBFS' as const},...passages]};
 }catch(e){await rm(folder,{recursive:true,force:true});
 throw e;
 }finally{await rm(config,{force:true});
@@ -109,7 +135,14 @@ const found=this.previews.get(p.preview_id);
 if(!found||found.session!==s.session_id||found.revision!==s.session_revision||await digest(found.path,signal)!==p.audio_sha256)throw Error('preview_binding');
 if(!a.baseline_path){const measured=z.object({rms:finite,peak:finite}).parse(await this.invoke(['inspect','--source',found.path],signal));return [{measurement_id:'rms_delta_db',value:db(measured.rms)-db(this.metrics(a).rms),unit:'dB'}];}
 const m=comparison.parse(await this.invoke(['compare','--dry',a.baseline_path,'--wet',found.path,'--start','0','--end',String(s.selection_samples[1]-s.selection_samples[0])],signal));
-return [{measurement_id:'rms_delta_db',value:db(m.wetRms)-db(m.dryRms),unit:'dB'},{measurement_id:'residual_rms_dbfs',value:db(m.residualRms),unit:'dBFS'}];
+const baseline=await this.passageMeasurements(s,a.baseline_path,signal),candidate=await this.passageMeasurements(s,found.path,signal);
+const changes:Measurement[]=[];
+for(const [id,delta] of [['soft_rms_dbfs','soft_rms_delta_db'],['hard_rms_dbfs','hard_rms_delta_db'],['hard_soft_contrast_db','contrast_delta_db']]){
+const before=baseline.find(m=>m.measurement_id===id),after=candidate.find(m=>m.measurement_id===id);
+if(before&&after)changes.push({measurement_id:delta,value:after.value-before.value,unit:'dB'});
+}
+await this.verify(a,signal);await this.verifyPreview(s,p,signal);
+return [{measurement_id:'rms_delta_db',value:db(m.wetRms)-db(m.dryRms),unit:'dB' as const},{measurement_id:'residual_rms_dbfs',value:db(m.residualRms),unit:'dBFS' as const},...changes];
 }
  async verifyPreview(s:Snapshot,p:Preview,signal:AbortSignal){await this.asset(s);
 signal.throwIfAborted();

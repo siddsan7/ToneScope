@@ -11,9 +11,11 @@ def git(root, *args):
 
 
 def source_identity(root):
-    """Hash tracked file paths and actual bytes, including pending tracked edits."""
+    """Hash tracked and nonignored new files, including pending edits/deletions."""
     root = Path(root)
-    files = git(root, "ls-files").splitlines()
+    inventory = subprocess.check_output(["git", "-C", str(root), "ls-files",
+                                         "--cached", "--others", "--exclude-standard", "-z"])
+    files = set(inventory.decode("utf-8").rstrip("\0").split("\0")) - {""}
     digest = hashlib.sha256()
     for name in sorted(files):
         path = root / name

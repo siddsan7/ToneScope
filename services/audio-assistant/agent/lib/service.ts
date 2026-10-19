@@ -2,6 +2,8 @@ import { randomUUID,createHash } from 'node:crypto';
 import { z } from 'zod';
 import { snapshotSchema, measurementSchema, previewSchema, proposalSchema, requestSchema, renderInput, previewInput, emptyInput, type Snapshot, type Measurement, type Patch, type Preview, type Proposal, type RequestInput, type NativeAdapter, type Envelope, type Usage } from './contracts.ts';
 import { StateStore } from './store.ts';
+import { parseLevelIntent } from './level-intent.ts';
+import { isCompressionRequest,runCompressionRules } from './compression-rules.ts';
 export const LIMITS=Object.freeze({request_bytes:8192,measurements:32,tool_calls:8,candidates:3,render_seconds:30,wall_ms:60000,input_tokens:12000,output_tokens:4000});
 export interface Provider {kind:'rules'|'replay'|'live';
  run(request:RequestInput,tools:RequestTools,signal:AbortSignal):Promise<{status:'noop'|'abstain';
@@ -17,7 +19,7 @@ verified_at:string;
 input_usd_per_million:number;
 output_usd_per_million:number;
 pricing_source:string};
-const same=(a:Snapshot,b:Snapshot)=>a.session_id===b.session_id&&a.session_revision===b.session_revision&&a.source_sha256===b.source_sha256&&a.base_graph_sha256===b.base_graph_sha256&&JSON.stringify(a.selection_samples)===JSON.stringify(b.selection_samples);
+const same=(a:Snapshot,b:Snapshot)=>a.session_id===b.session_id&&a.session_revision===b.session_revision&&a.source_sha256===b.source_sha256&&a.base_graph_sha256===b.base_graph_sha256&&JSON.stringify(a.selection_samples)===JSON.stringify(b.selection_samples)&&JSON.stringify(a.passages)===JSON.stringify(b.passages)&&JSON.stringify(a.processing)===JSON.stringify(b.processing);
 export class RequestTools {
  async releaseUnused(keep?:string){for(const id of this.previews.keys())if(id!==keep){await this.native.releasePreview?.(createHash('sha256').update(this.request.session_id).digest('hex'),id);this.previews.delete(id);}}
 
@@ -121,23 +123,33 @@ export class RulesProvider implements Provider {
  readonly kind='rules' as const;
  async run(r:RequestInput,t:RequestTools){const s=await t.snapshot();
 const measurements=await t.measurements();
+if(isCompressionRequest(r.prompt))return runCompressionRules(r,s,measurements,t);
 const rms=measurements.find(x=>x.measurement_id==='rms_dbfs'&&x.unit==='dBFS');
-const gain=s.parameters.find(x=>x.parameter_id==='outputDb'&&x.unit==='dB'&&typeof x.value==='number');
+const gain=s.parameters.find(x=>x.stage_id==='output'&&x.parameter_id==='outputDb'&&x.unit==='dB'&&typeof x.value==='number');
+const intent=parseLevelIntent(r.prompt);
+if(!intent)return {status:'abstain' as const,reason:'The rules baseline requires one supported, unambiguous level request.'};
+if(intent.kind==='keep')return {status:'noop' as const,reason:'The request leaves the level unchanged.'};
 if(!rms||!gain)return {status:'abstain' as const,reason:'A calibrated RMS measurement and authorized gain parameter are required.'};
 if(rms.value<=-180)return {status:'abstain' as const,reason:'The baseline is silent or below the reliable measurement floor.'};
-if(!/\b(level|loud|louder|quiet|quieter|gain|normalize)\b/i.test(r.prompt))return {status:'abstain' as const,reason:'The rules baseline supports level requests only.'};
-const quieter=/\b(quiet|quieter|lower|reduce|softer)\b|less loud/i.test(r.prompt);
-const louder=!quieter&&/\b(loud|louder|higher)\b/i.test(r.prompt);
-if(!quieter&&!louder&&Math.abs(rms.value+18)<1)return {status:'noop' as const,reason:'Measured level is already within 1 dB of the baseline target.'};
-const desired=quieter?-3:louder?Math.max(3,Math.min(6,-18-rms.value)):Math.max(-6,Math.min(6,-18-rms.value));
 const peak=measurements.find(x=>x.measurement_id==='peak_dbfs'&&x.unit==='dBFS');
-const delta=peak&&desired>0?Math.min(desired,Math.max(0,-1-peak.value)):desired;
-const value=Math.max(gain.min,Math.min(gain.max,(gain.value as number)+delta));
-if(value===gain.value)return {status:'noop' as const,reason:'Authorized gain range prevents a change.'};
+const current=gain.value as number;
+if(gain.min>current||current>gain.max)return {status:'abstain' as const,reason:'The current output gain is outside the authorized range.'};
+const lower=gain.min-current;
+const upper=Math.min(gain.max-current,peak?intent.ceiling-peak.value:Infinity);
+const desired=intent.kind==='maximize'?upper:intent.kind==='target'?intent.value-rms.value:intent.exact?intent.value:intent.value<0?-3:Math.max(3,Math.min(6,-18-rms.value));
+// This epsilon handles float32 measurement noise, not task grading tolerance.
+const epsilon=1e-5;
+if(intent.kind==='maximize'&&!peak)return {status:'abstain' as const,reason:'A calibrated sample peak is required to maximize level.'};
+if(intent.kind!=='maximize'&&intent.exact&&(desired<lower-epsilon||desired>upper+epsilon||Math.abs(desired)>epsilon&&!peak))return {status:'abstain' as const,reason:'The requested level cannot be verified within the authorized gain range and sample peak ceiling.'};
+if(upper<lower-epsilon)return {status:'abstain' as const,reason:'The sample peak ceiling cannot be met within the authorized gain range.'};
+if(intent.kind==='delta'&&!intent.exact&&desired>0&&upper< -epsilon)return {status:'abstain' as const,reason:'The sample peak ceiling prevents the requested increase.'};
+const delta=intent.kind==='maximize'?upper:intent.exact?desired:Math.max(lower,Math.min(upper,desired));
+if(Math.abs(delta)<=epsilon)return {status:'noop' as const,reason:'The measured level already meets the request or permits no further gain.'};
+const value=Math.max(gain.min,Math.min(gain.max,current+delta));
 const patch:Patch[]=[{stage_id:gain.stage_id,parameter_id:gain.parameter_id,unit:'dB',value}];
 const preview=await t.render({parameter_patch:patch});
 await t.compare({preview_id:preview.preview_id});
-return {status:'ready' as const,preview_id:preview.preview_id,proposal:{schema_version:1 as const,request_id:r.request_id,session_revision:s.session_revision,source_sha256:s.source_sha256,base_graph_sha256:s.base_graph_sha256,selection_samples:s.selection_samples,hypotheses:['A bounded gain adjustment changes measured output level.'],evidence_refs:[rms],parameter_patch:patch,expected_tradeoffs:['Gain changes peak headroom; compare the preview before accepting.'],limitations:['Deterministic level baseline; no tonal or perceptual quality judgment.'],requires_user_acceptance:true as const}};
+return {status:'ready' as const,preview_id:preview.preview_id,proposal:{schema_version:1 as const,request_id:r.request_id,session_revision:s.session_revision,source_sha256:s.source_sha256,base_graph_sha256:s.base_graph_sha256,selection_samples:s.selection_samples,hypotheses:['A bounded gain adjustment changes measured output level.'],evidence_refs:peak?[rms,peak]:[rms],parameter_patch:patch,expected_tradeoffs:['Gain changes peak headroom; compare the preview before accepting.'],limitations:['Deterministic level baseline; no tonal or perceptual quality judgment.'],requires_user_acceptance:true as const}};
 }
 }
 export class AssistantService {

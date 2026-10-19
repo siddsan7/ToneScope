@@ -15,19 +15,27 @@ namespace tonescope_faust {
 #define FAUSTFLOAT float
 
 namespace tonescope::detail {
-// Explicit state ports retain linked/stereo/band ownership in fixed host
-// storage. Faust owns the numerical compressor and tone-EQ recurrences.
-inline double compressorStep(double energy, double& detector, double& reduction,
-    double sr, double threshold, double ratio, double attack, double release,
-    double knee, double makeup) noexcept {
+// One persistent graph per linked stereo pair (or per crossover band).
+// These fields are read-only telemetry copies; recurrence state lives in Faust.
+struct Compressor {
     tonescope_faust::ToneScopeCompressor kernel;
-    double gain=0, nextDetector=0, nextReduction=0;
-    double* in[]={&energy,&detector,&reduction,&sr,&threshold,&ratio,&attack,&release,&knee,&makeup};
-    double* out[]={&gain,&nextDetector,&nextReduction};
-    kernel.compute(1,in,out);
-    detector=nextDetector; reduction=nextReduction;
-    return gain;
-}
+    double detector=0, reduction=0, gain=1;
+
+    void prepare(double sr) noexcept {
+        kernel.init(static_cast<int>(sr));
+        detector=0; reduction=0; gain=1;
+    }
+    std::array<double,2> tick(double left, double right, double sr,
+        double threshold, double ratio, double attack, double release,
+        double knee, double makeup) noexcept {
+        std::array<double,2> audio{};
+        double* in[]={&left,&right,&sr,&threshold,&ratio,&attack,&release,&knee,&makeup};
+        double* out[]={&audio[0],&audio[1],&detector,&reduction,&gain};
+        // Host routing and control smoothing are currently sample-wise.
+        kernel.compute(1,in,out);
+        return audio;
+    }
+};
 inline void eqCoefficients(double kind,double hz,double q,double db,double sr,
     double& b0,double& b1,double& b2,double& a1,double& a2) noexcept {
     tonescope_faust::ToneScopeEqCoefficients kernel;
