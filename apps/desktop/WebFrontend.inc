@@ -14,6 +14,20 @@
         put("canUndo",history.canUndo());put("canRedo",history.canRedo());put("captureFinalizing",captureFinalizing);put("dryReference","ingress-clamped and smoothed input trim; recorded dry source precedes trim");
         put("sourceFrames",(juce::int64)sourceFrameCount());put("inspectionOffset",(juce::int64)inspectionOffset);put("inspectionEnd",(juce::int64)(streamedSource?inspectionEnd:sourceFrameCount()));put("streamedSource",streamedSource);put("streamPreparing",streamPlayRequested);
         put("position",rendered?position.load()/juce::jmax<int64_t>(1,sourceFrameCount()):0);
+        // Read cached scalar evidence only. No analysis, speech, allocation or UI
+        // work is added to the audio callback; this is the message-thread snapshot.
+        auto* summary=new juce::DynamicObject();juce::var summaryValue(summary);
+        summary->setProperty("revision",(juce::int64)renderedRevision);
+        summary->setProperty("selectionSamples",juce::Array<juce::var>{(juce::int64)selectionStart.load(),(juce::int64)selectionEnd.load()});
+        summary->setProperty("band",auditionBand);
+        const bool summaryCurrent=source&&rendered&&renderedRevision==revision&&!busy&&!monitoring.load()&&!recording.load()&&!assistantPreviewActive();
+        const bool summaryAvailable=summaryCurrent&&rendered->comparison.valid;
+        summary->setProperty("available",summaryAvailable);
+        summary->setProperty("reason",!source?"no_source":monitoring.load()||recording.load()?"live_audio":assistantPreviewActive()?"assistant_preview":!summaryCurrent?"not_current":!summaryAvailable?"measurement_unavailable":"");
+        summary->setProperty("dryRms",summaryAvailable?juce::var(rendered->comparison.dryRms):juce::var{});
+        summary->setProperty("wetRms",summaryAvailable?juce::var(rendered->comparison.wetRms):juce::var{});
+        summary->setProperty("wetPeak",summaryAvailable&&rendered->comparison.gain>0?juce::var(rendered->comparison.peak/rendered->comparison.gain):juce::var{});
+        put("selectionSummary",summaryValue);
         juce::Array<juce::var> selection;selection.add(scope.first);selection.add(scope.last);put("selection",selection);
         juce::Array<juce::var> stageValues;for(auto& stage:stages)stageValues.add(stage.getToggleState());put("stages",stageValues);
         juce::Array<juce::var> params;

@@ -1,5 +1,12 @@
 # Private unsigned development package
 
+For a fresh local delivery, run startup and embedded checks against the extracted
+or installed executable with `scripts/test-startup.ps1 -Executable <exe>` and
+`scripts/test-embedded.ps1 -Executable <exe> -Assistant -SelectionSummary`.
+`-Assistant -MetricsOnly` additionally exercises level help with manual marks on
+a streamed source beyond the inspection cache. Each probe uses isolated state;
+these software checks do not qualify hardware or human accessibility.
+
 Build frontend/native executables and run `node scripts/bundle-assistant.mjs`
 with the locked dependencies installed first. Run `pwsh scripts/package-dev.ps1`
 to create a fresh UUID staging tree and new ZIP. Inputs are explicitly listed;

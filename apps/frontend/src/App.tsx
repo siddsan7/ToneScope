@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Button } from "./components/ui/button";
 import { PassageCompare } from "./components/PassageCompare";
+import { SelectionSummary } from "./components/SelectionSummary";
 import { Slider } from "./components/ui/slider";
 import { Switch } from "./components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./components/ui/tabs";
@@ -118,7 +119,7 @@ export default function App() {
       inFlight = true;
       try {
         const s = await command("snapshot");
-        if (alive) setModel(current => !current || s.revision >= current.revision ? s : current);
+        if (alive) { setModel(current => !current || s.revision >= current.revision ? s : current); setError(""); }
       } catch (e) {
         if (alive) setError(String(e));
       } finally {
@@ -561,6 +562,7 @@ export default function App() {
                   "Comparison measurements appear after audio is rendered."}
               </p>
             </div>
+            <SelectionSummary model={model} transportError={!!error} />
           </main>
           <aside>
             <Tabs value={panel} onValueChange={setPanel}>

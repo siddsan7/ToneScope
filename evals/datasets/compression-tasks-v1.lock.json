@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "corpus_sha256": "cca0eba4819d4c8ca36ddea9d62b6a7be16c7e272998dc3fab85e364f415673c",
+  "review_rule": "Changes require explicit new corpus/version review; never retune objectives or gates to improve outcomes."
+}

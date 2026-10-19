@@ -119,7 +119,8 @@ void faustStageTests() {
  // Independent scalar compressor definition, including soft-knee boundaries,
  // detector decay, attack/release switching and ratio-one identity.
  for(double sr:{44100.,48000.,96000.})for(double knee:{0.,6.,24.})for(double ratio:{1.,4.,20.}) {
-  double detector=0,reduction=0,referenceDetector=0,referenceReduction=0;
+  detail::Compressor compressor;compressor.prepare(sr);
+  double referenceDetector=0,referenceReduction=0;
   for(int n=0;n<6000;++n) {
    const double level=n<2000?.02:n<4000?.8:0.;
    const double energy=level*level,threshold=-24.,attack=.1,release=100.;
@@ -131,9 +132,11 @@ void faustStageTests() {
    else if(over>=knee/2)target=slope*over;
    const double ms=target>referenceReduction?attack:release,a=std::exp(-1/(ms*.001*sr));
    referenceReduction=a*referenceReduction+(1-a)*target;
-   const double actual=detail::compressorStep(energy,detector,reduction,sr,threshold,ratio,attack,release,knee,0);
-   require(near(detector,referenceDetector,2e-13),"Faust RMS detector matches independent recurrence");
-   require(near(reduction,referenceReduction,2e-10),"Faust soft knee and ballistics match independent recurrence");
+   const auto audio=compressor.tick(level,level,sr,threshold,ratio,attack,release,knee,0);
+   const double actual=compressor.gain;
+   require(near(audio[0],level*actual,2e-14)&&audio[0]==audio[1],"Faust graph applies shared stereo gain");
+   require(near(compressor.detector,referenceDetector,2e-13),"Faust RMS detector matches independent recurrence");
+   require(near(compressor.reduction,referenceReduction,2e-10),"Faust soft knee and ballistics match independent recurrence");
    require(near(actual,std::pow(10.,-referenceReduction/20),2e-11),"Faust compressor gain matches independent recurrence");
    if(ratio==1)require(actual==1,"Faust ratio-one exact identity");
   }

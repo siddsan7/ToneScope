@@ -13,7 +13,9 @@ def git(root, *arguments):
 def identity(root):
     # This matches evals/provenance.py. A release additionally requires clean Git.
     digest = hashlib.sha256()
-    for name in sorted(git(root, "ls-files").splitlines()):
+    files = subprocess.check_output(["git", "-C", str(root), "ls-files",
+                                     "--cached", "--others", "--exclude-standard", "-z"])
+    for name in sorted(set(files.decode("utf-8").rstrip("\0").split("\0")) - {""}):
         path = root / name
         digest.update(name.encode("utf-8") + b"\0")
         digest.update(hashlib.sha256(path.read_bytes()).digest() if path.is_file() else b"MISSING")

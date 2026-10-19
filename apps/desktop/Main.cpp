@@ -19,6 +19,7 @@
 #include "FilePlayback.h"
 #include "CallbackProbe.h"
 #include "CallbackReport.h"
+#include "DesktopInstance.h"
 #include <ToneScopeBuildIdentity.h>
 #if __has_include("AssistantBridge.h")
 #include "AssistantBridge.h"
@@ -930,7 +931,21 @@ class Application final : public juce::JUCEApplication {
 
 public:
 
-    const juce::String getApplicationName() override{return "ToneScope";}
+    static juce::StringArray startupArguments(const juce::String& commandLine) {
+        auto args=juce::StringArray::fromTokens(commandLine,true);
+        for(auto& arg:args) arg=arg.unquoted();
+        args.removeEmptyStrings();
+        return args;
+    }
+
+    const juce::String getApplicationName() override {
+        const auto args=startupArguments(getCommandLineParameters());
+        std::vector<std::string> storage;
+        for(const auto& arg:args) storage.push_back(arg.toStdString());
+        std::vector<std::string_view> views;
+        for(const auto& arg:storage) views.push_back(arg);
+        return juce::String(tonescope::desktop::applicationInstanceName(views));
+    }
 
     const juce::String getApplicationVersion() override{return "0.1.0";}
 
@@ -938,7 +953,9 @@ public:
 
     void initialise(const juce::String& commandLine) override {
 
-        auto args=juce::StringArray::fromTokens(commandLine,true);args.removeEmptyStrings();
+        tonescope::desktop::recoveryStorageNamespace=juce::String(
+            tonescope::desktop::applicationRecoveryNamespace(getApplicationName().toStdString()));
+        auto args=startupArguments(commandLine);
 #if JUCE_WINDOWS
         if(args.contains("--web-ui-test")){auto debug=args.indexOf("--web-debug-port");if(debug>=0&&debug+1<args.size()&&args[debug+1].containsOnly("0123456789")){int port=args[debug+1].getIntValue();if(port>=1024&&port<=65535){auto flags="--remote-debugging-address=127.0.0.1 --remote-debugging-port="+juce::String(port);_putenv_s("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",flags.toRawUTF8());}}}
 #endif

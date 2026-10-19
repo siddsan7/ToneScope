@@ -669,6 +669,16 @@ input[disabled],
 button[disabled] {
   opacity: 0.45;
 }
+.selection-summary {margin-top: 1.4rem; padding-top: 1.2rem; border-top: 1px solid var(--color-border); min-width: 0;}
+.summary-heading, .summary-actions {display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;}
+.summary-heading {justify-content: space-between; margin-bottom: .75rem;}
+.summary-actions button {white-space: normal; min-height: 2.75rem; height: auto;}
+.selection-summary dl {display: grid; grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr)); gap: 1rem; margin: 1rem 0;}
+.selection-summary dl > div {min-width: 0;}
+.selection-summary dt {color: var(--color-muted-foreground); margin-bottom: .25rem;}
+.selection-summary dd {margin: 0; line-height: 1.5; overflow-wrap: anywhere;}
+.selection-summary p {line-height: 1.5; overflow-wrap: anywhere;}
+.selection-summary .speech-status {min-height: 1.5em; margin-top: .4rem;}
 @media (max-width: 1050px) {
   .workspace {
     grid-template-columns: minmax(0, 1fr) 305px;

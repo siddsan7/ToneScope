@@ -1,8 +1,29 @@
 # ToneScope
 
-A Windows guitar-effects workbench: select a passage, listen, adjust, and verify. C++20 hosts the audio engine, generated Faust kernels supply compressor/EQ/drive algorithms, and a bundled React/shadcn interface presents the microscope. Core audio runs offline.
+A Windows guitar-effects workbench: **select a passage → adjust → freeze RMS match → listen and verify.** ToneScope makes the settings and measurements behind an audio comparison inspectable.
 
-**Status: development integration, not a qualified release.** Implemented software includes bounded streaming WAV rendering, persistent dry capture/recovery, 1x/2x/4x drive, phase-correct multiband compression, same-band audition, aligned comparison/residual, undo, independent numerical evaluations, and private development packaging. Long-file desktop transport, manual dynamics comparison, native assistant preview/A-B/apply/undo and opt-in callback observations are implemented with bounded software regression checks. See `delivery/brain.md` and `delivery/progress.json` for current state and qualification limits.
+## Hear it and inspect the evidence
+
+The [local listening bench](docs/showcase/README.md) generates **four attributed guitar DI examples and three measured plots** from the existing renderer. Its browser page includes dry/processed audio, RMS-matched audition copies, raw renders, settings, and binary/source hashes. A reviewer can open the generated page without building the desktop app. The [80-second walkthrough script](docs/showcase/walkthrough.md) covers the desktop comparison; a narrated video remains to be recorded.
+
+```powershell
+python scripts/acquire-public-corpus.py --output .tools/public-corpus/P3_music.zip
+python scripts/build-showcase.py --archive .tools/public-corpus/P3_music.zip --cli build/windows-dev/tonescope_cli_artefacts/Release/tonescope_cli.exe --output artifacts/showcase
+Start-Process artifacts/showcase/index.html
+```
+
+The generator needs an existing native CLI; build instructions follow below. It runs offline after archive acquisition and refuses an existing output folder. The examples use two public Guitar-TECHS performances under CC BY 4.0, with attribution and transformation notes beside the audio. They are inspectable regression data. See the [corpus protocol](docs/evaluation/public-corpus.md).
+
+## Engineering decisions
+
+- **Measure the change.** Aligned comparison, residuals, actual gain reduction, and frozen RMS match expose what the controls did. Independent curve, timing, transfer, and oversampling references check defined numerical behavior.
+- **Keep audio predictable.** C++20 hosts Faust DSP, control smoothing, crossover and resampling. The callback avoids allocation, locks, filesystem access, UI, logging, and networking. Bounded streaming reconstructs source history for selected renders.
+- **Give Faust ownership of state.** The [linked RMS compressor](docs/showcase/compressor.md) owns detection, attack/release state, and stereo gain application in a persistent Faust graph. C++ supplies smoothed controls and routing. Existing independent numerical gates still define its behavior.
+- **Keep suggestions reviewable.** The optional assistant uses native measurements and rendered previews. Apply is explicit and undoable. Offline level rules provide the current baseline; paid model evaluation remains future work.
+
+A bundled React/shadcn interface presents the microscope inside JUCE. Implemented features include persistent dry capture/recovery, 1x/2x/4x drive, phase-compensated multiband compression, same-band audition, desktop transport, and private development packaging.
+
+**Status: development software; external qualification remains.** Numerical checks do not establish preferred tone, hardware performance, accessibility effectiveness, or real-model quality. RMS is not perceptual loudness; sample peak is not true peak. Public executable release remains gated by review, licensing, signing, and clean-machine qualification. See [current working state](delivery/brain.md).
 
 ## Build on Windows x64
 

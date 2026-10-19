@@ -12,6 +12,7 @@
 #include <functional>
 #include <mutex>
 #include <set>
+#include <map>
 #include <stdexcept>
 #if JUCE_WINDOWS
 #ifndef NOMINMAX
@@ -84,13 +85,35 @@ struct Context {
  int alignment=0;
  tonescope::Parameters parameters;
  std::shared_ptr<const tonescope::AudioData> rawWet;
- juce::var descriptors;
+ juce::var descriptors,passages;
  juce::var selection() const {return juce::var(juce::Array<juce::var>{(juce::int64)first,(juce::int64)last});}
- juce::var binding() const {return object({{"session_id",sessionId},{"session_revision",(juce::int64)revision},{"source_sha256",sourceHash},{"base_graph_sha256",graphHash},{"selection_samples",selection()},{"sample_rate",(int)sampleRate}});}
+ juce::var processing() const {return object({{"compressor",parameters.compressor},{"multiband",parameters.multiband},{"equalizer",parameters.equalizer},{"drive",parameters.drive}});}
+ juce::var binding() const {auto value=object({{"session_id",sessionId},{"session_revision",(juce::int64)revision},{"source_sha256",sourceHash},{"base_graph_sha256",graphHash},{"selection_samples",selection()},{"sample_rate",(int)sampleRate},{"processing",processing()}});if(!passages.isVoid())value.getDynamicObject()->setProperty("passages",passages);return value;}
  juce::var snapshot() const {
-  return object({{"session_id",sessionId},{"session_revision",(juce::int64)revision},{"source_sha256",sourceHash},{"base_graph_sha256",graphHash},{"source_handle","native_asset"},{"selection_samples",selection()},{"sample_rate",(int)sampleRate},{"parameters",descriptors}});
+  auto value=binding();value.getDynamicObject()->setProperty("source_handle","native_asset");value.getDynamicObject()->setProperty("parameters",descriptors);return value;
  }
 };
+using EvidenceValues=std::map<juce::String,std::pair<double,juce::String>>;
+inline std::pair<double,double> measuredDb(const tonescope::AudioData&,int64_t,int64_t);
+inline void addPassageEvidence(EvidenceValues& values,const Context& context,const tonescope::AudioData& audio,int64_t offset,int alignment,const juce::String& prefix={}){
+ if(context.passages.isVoid())return;
+ require(closed(context.passages,{"origin","soft","hard"})&&context.passages["origin"].toString()=="manual","Invalid manual passage metadata.");
+ std::array<std::pair<int64_t,int64_t>,2> intervals;
+ int index=0;bool energetic=true;double softDb=0,hardDb=0;
+ for(auto* name:{"soft","hard"}){
+  auto range=context.passages[name];auto* span=range.getArray();require(span&&span->size()==2&&integer((*span)[0])&&integer((*span)[1]),"Invalid manual passage interval.");
+  auto first=int64_t(juce::int64((*span)[0])),last=int64_t(juce::int64((*span)[1]));require(first>=context.first&&last<=context.last&&last-first>=2,"Manual passage lies outside selection.");intervals[index++]={first,last};
+  auto measured=measuredDb(audio,first-offset+alignment,last-offset+alignment);
+  values[prefix+name+"_peak_dbfs"]={measured.second,"dBFS"};
+  if(measured.first>=-180)values[prefix+name+"_rms_dbfs"]={measured.first,"dBFS"};else energetic=false;
+  if(index==1)softDb=measured.first;else hardDb=measured.first;
+ }
+ require(intervals[0].second<=intervals[1].first||intervals[1].second<=intervals[0].first,"Manual passages overlap.");
+ if(energetic)values[prefix+"hard_soft_contrast_db"]={hardDb-softDb,"dB"};
+}
+inline void checkEvidence(const juce::var& evidence,const EvidenceValues& expected,const char* message){
+ for(const auto& item:*evidence.getArray()){auto found=expected.find(item["measurement_id"].toString());require(found!=expected.end()&&item["unit"].toString()==found->second.second&&std::abs(double(item["value"])-found->second.first)<=1e-5,message);}
+}
 inline void validateMeasurements(const juce::var& value){
  auto* array=value.getArray();require(array&&array->size()>=1&&array->size()<=32,"Assistant measurements are missing or excessive.");
  std::set<juce::String> seen;
@@ -145,7 +168,9 @@ inline Ready validateReady(const Context& context,const juce::var& envelope,cons
  for(auto* key:{"hypotheses","expected_tradeoffs","limitations"}){auto* entries=p[key].getArray();require(entries&&entries->size()>=1&&entries->size()<=8,"Missing assistant explanation.");for(const auto& entry:*entries)require(entry.isString()&&entry.toString().isNotEmpty()&&entry.toString().length()<=500&&!entry.toString().containsAnyOf("0123456789"),"Unverified numerical assistant claim.");}
  validateMeasurements(p["evidence_refs"]);validateMeasurements(envelope["evidence_refs"]);
  require(context.metricsOnly||bool(context.rawWet),"Missing native baseline evidence.");const auto baselineDb=context.metricsOnly?std::pair<double,double>{20*std::log10(std::max(1e-12,context.baselineRms)),20*std::log10(std::max(1e-12,context.baselinePeak))}:measuredDb(*context.rawWet,context.first-context.cacheOffset+context.alignment,context.last-context.cacheOffset+context.alignment);
- for(const auto& evidence:*p["evidence_refs"].getArray()){const auto key=evidence["measurement_id"].toString();require(evidence["unit"].toString()=="dBFS"&&(key=="rms_dbfs"||key=="peak_dbfs")&&std::abs(double(evidence["value"])-(key=="rms_dbfs"?baselineDb.first:baselineDb.second))<=1e-5,"Assistant evidence differs from independently measured native baseline.");}
+ EvidenceValues baselineValues{{"rms_dbfs",{baselineDb.first,"dBFS"}},{"peak_dbfs",{baselineDb.second,"dBFS"}}};
+ if(!context.passages.isVoid()){require(!context.metricsOnly&&bool(context.rawWet),"Passage audio evidence is unavailable.");addPassageEvidence(baselineValues,context,*context.rawWet,context.cacheOffset,context.alignment);}
+ checkEvidence(p["evidence_refs"],baselineValues,"Assistant evidence differs from independently measured native baseline.");
  require(juce::JSON::toString(p["evidence_refs"],true)==juce::JSON::toString(envelope["evidence_refs"],true),"Assistant evidence binding differs.");
  require(closed(preview,{"preview_id","audio_sha256","session_revision","measurements"})&&uuid(preview["preview_id"].toString())&&digestText(preview["audio_sha256"].toString())&&integer(preview["session_revision"])&&juce::int64(preview["session_revision"])==(juce::int64)context.revision,"Invalid assistant preview binding.");
  validateMeasurements(preview["measurements"]);
@@ -160,7 +185,8 @@ inline Ready validateReady(const Context& context,const juce::var& envelope,cons
  require(double(usage["candidate_frames"])>=context.last+context.alignment&&double(usage["tool_calls"])>=5,"Assistant omitted required preview work.");
  auto data=std::make_shared<tonescope::AudioData>(tonescope::readWav(audio.getFullPathName().toStdString()));require(data->frames()==context.last-context.first&&data->sampleRate==context.sampleRate,"Assistant audio layout differs.");
  const auto candidateDb=measuredDb(*data,0,data->frames());
- for(const auto& evidence:*preview["measurements"].getArray()){const auto key=evidence["measurement_id"].toString();require(evidence["unit"].toString()=="dBFS"&&(key=="preview_rms_dbfs"||key=="preview_peak_dbfs")&&std::abs(double(evidence["value"])-(key=="preview_rms_dbfs"?candidateDb.first:candidateDb.second))<=1e-5,"Assistant preview measurements differ from native audio readback.");}
+ EvidenceValues candidateValues{{"preview_rms_dbfs",{candidateDb.first,"dBFS"}},{"preview_peak_dbfs",{candidateDb.second,"dBFS"}}};addPassageEvidence(candidateValues,context,*data,context.first,0,"preview_");
+ checkEvidence(preview["measurements"],candidateValues,"Assistant preview measurements differ from native audio readback.");
  return {envelope,p,preview,audio,parameters,data};
 }
 
