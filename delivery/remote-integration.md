@@ -17,12 +17,12 @@ is in `delivery/integration-closeout.md` and ignored
 `artifacts/integration-closeout/verification.json`. That private package remains
 an explicitly dirty-working-tree snapshot, not clean-commit CI evidence.
 
-CI keeps standard and streamed embedded reports in separate directories. Frozen
+CI keeps standard and streamed embedded reports in separate directories.
 The two embedded runs use distinct debug ports to avoid WebView teardown overlap.
 Debug discovery waits for the actual `https://juce.backend/` page and its socket;
 the client also waits for the mounted native frontend. An endpoint or blank page
 alone is not readiness. Bounded regressions cover these startup states.
-model arms remain blocked; the original replay gate must report passing offline
+Frozen model arms remain blocked; the original replay gate must report passing offline
 protocol checks and blocked live qualification. Public CI uploads still exclude
 unsigned executable/ZIP/broker staging payloads. Hardware, human listening,
 Narrator/actual speech, licensing/signing and clean-machine qualification remain
