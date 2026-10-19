@@ -42,7 +42,7 @@ jobs:
           ./scripts/test-embedded.ps1 -Assistant -SelectionSummary
           New-Item -ItemType Directory -Force artifacts/frontend-native-standard | Out-Null
           Copy-Item artifacts/frontend-native/*.json,artifacts/frontend-native/embedded.png artifacts/frontend-native-standard/
-          ./scripts/test-embedded.ps1 -Assistant -MetricsOnly
+          ./scripts/test-embedded.ps1 -Assistant -MetricsOnly -Port 9338
           New-Item -ItemType Directory -Force artifacts/frontend-native-streamed | Out-Null
           Copy-Item artifacts/frontend-native/*.json,artifacts/frontend-native/embedded.png artifacts/frontend-native-streamed/
       - run: npm run typecheck && npm test && npm run build
