@@ -12,6 +12,8 @@ int main(){
  try{
   require(folder.createDirectory(),"Cannot create native test directory.");
   require(capability()!=capability(),"OS capabilities repeated.");
+  require(publicRequestFailure("Local assistant request failed (HTTP 400).").contains("HTTP 400")&&publicRequestFailure("Local assistant transport failed.").contains("transport failed"),"Safe assistant transport diagnostics were hidden.");
+  for(const auto& secret:{"Bearer private-token", "C:/private/history.json", "Local assistant request failed (HTTP 400). secret", "Local assistant request failed (HTTP abc)."})require(publicRequestFailure(secret)=="Local assistant request failed. Check the optional service setup.","Assistant diagnostics exposed an untrusted detail.");
   CancellationLedger ledger(2);ledger.insert("first");ledger.insert("first");ledger.insert("second");require(ledger.size()==2&&ledger.contains("first")&&!ledger.contains("unrelated"),"Bounded cancel ledger duplicate behavior");ledger.insert("third");require(ledger.size()==2&&ledger.contains("unrelated"),"Cancel ledger overflow must fail closed without evicting active IDs");ledger.clear();require(ledger.size()==0&&!ledger.contains("first"),"Explicit new session resets cancel ledger");
   const auto unity=frozenMatch(.1,.1),lower=frozenMatch(.1,.2),upperCap=frozenMatch(.1,.001),lowerCap=frozenMatch(.001,.1);
   require(unity.valid&&std::abs(unity.gain-1)<1e-12&&!unity.capped&&lower.valid&&std::abs(lower.gain-.5)<1e-12&&!lower.capped,"Frozen selected-RMS matching differs.");
@@ -31,6 +33,7 @@ int main(){
   bridge->request(context,"make louder",[&promise](juce::var response,juce::String error){if(error.isNotEmpty())promise.set_exception(std::make_exception_ptr(std::runtime_error(error.toStdString())));else promise.set_value(response);});
   require(future.wait_for(std::chrono::seconds(30))==std::future_status::ready,"Native broker request timed out.");
   auto response=future.get();if(response["status"].toString()!="ready")std::cerr<<"status="<<response["status"].toString()<<" reason="<<response["reason"].toString()<<" usage="<<juce::JSON::toString(response["usage"],true)<<"\n";  auto ready=validateReady(context,response,bridge->previewDirectory());
+  bool httpDiagnostic=false;try{bridge->http("GET","/v1/requests/unknown",{});}catch(const std::exception& error){httpDiagnostic=publicRequestFailure(error.what()).contains("HTTP 403");}require(httpDiagnostic,"Real broker HTTP rejection lost its safe diagnostic.");
   require(std::abs(ready.parameters.outputDb-6)<1e-6&&context.parameters.outputDb==0,"Proposal changed parameters before explicit native acceptance.");
   require(juce::int64(response["usage"]["candidate_frames"])==context.last+context.alignment,"Prehistory and alignment processing were not charged.");
   require(ready.audio->frames()==context.last-context.first,"Candidate crop layout differs.");

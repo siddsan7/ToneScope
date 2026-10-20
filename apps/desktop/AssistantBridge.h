@@ -29,6 +29,14 @@ inline juce::var object(std::initializer_list<std::pair<const char*,juce::var>> 
  return juce::var(result);
 }
 inline void require(bool condition,const char* reason){if(!condition)throw std::runtime_error(reason);}
+inline juce::String publicRequestFailure(const juce::String& detail){
+ const juce::String prefix="Local assistant request failed (HTTP ";
+ const auto code=detail.substring(prefix.length(),prefix.length()+3);
+ if(detail.startsWith(prefix)&&detail==prefix+code+")."&&code.length()==3&&code.containsOnly("0123456789")&&code.getIntValue()>=100&&code.getIntValue()<=599)return detail+" Check the optional service setup.";
+ if(detail=="Local assistant transport failed.")return detail+" Check the optional service setup.";
+ for(const auto* safe:{"Local assistant preparation failed.","Local assistant startup failed.","Local assistant did not complete its authenticated handshake.","Local assistant process exited before readiness.","Local assistant handshake was rejected.","Invalid local assistant handshake.","Cannot start the optional local assistant.","Cannot write private assistant state.","Cannot publish private assistant state."})if(detail==safe)return detail+" Check the optional service setup.";
+ return "Local assistant request failed. Check the optional service setup.";
+}
 inline bool finiteNumber(const juce::var& v){return (v.isInt()||v.isInt64()||v.isDouble())&&std::isfinite(double(v));}
 inline bool integer(const juce::var& v){return finiteNumber(v)&&double(v)>=0&&double(v)==std::floor(double(v))&&double(v)<=9007199254740991.;}
 inline bool closed(const juce::var& v,std::initializer_list<const char*> keys){
@@ -245,6 +253,7 @@ class Bridge final : public std::enable_shared_from_this<Bridge> {
    {std::scoped_lock lock(childMutex);if(!child.isRunning())break;}
    juce::Thread::sleep(10);
   }
+  {std::scoped_lock lock(childMutex);require(child.isRunning(),"Local assistant process exited before readiness.");}
   throw std::runtime_error("Local assistant did not complete its authenticated handshake.");
  }
 public:
@@ -272,13 +281,15 @@ public:
   auto url=juce::URL("http://127.0.0.1:"+juce::String(port.load())+route);
   if(method=="POST")url=url.withPOSTData(juce::JSON::toString(body,true));
   int status=0;auto options=juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress).withHttpRequestCmd(method).withExtraHeaders("Authorization: Bearer "+token+"\r\nContent-Type: application/json\r\n").withConnectionTimeoutMs(timeout).withNumRedirectsToFollow(0).withStatusCode(&status);
-  auto stream=url.createInputStream(options);require(bool(stream)&&status==200,"Local assistant request failed.");
+  auto stream=url.createInputStream(options);require(bool(stream)&&status>0,"Local assistant transport failed.");
+  if(status!=200)throw std::runtime_error(("Local assistant request failed (HTTP "+juce::String(status)+").").toStdString());
   juce::MemoryBlock bytes;std::array<char,4096> buffer{};
   while(!stream->isExhausted()){require(!stopping,"Assistant is stopping.");auto count=stream->read(buffer.data(),(int)buffer.size());if(count<=0)break;bytes.append(buffer.data(),(size_t)count);require(bytes.getSize()<=65536,"Local assistant response is excessive.");}
   auto response=juce::JSON::parse(juce::String::fromUTF8((const char*)bytes.getData(),(int)bytes.getSize()));require(response.isObject(),"Invalid local assistant JSON.");return response;
  }
  void request(Context context,juce::String prompt,Completion complete){
   auto self=shared_from_this();post([self,context=std::move(context),prompt=std::move(prompt),complete=std::move(complete)]()mutable{
+   const char* phase="Local assistant preparation failed.";
    try{
     std::unique_lock serverLock(self->serverMutex);
     require(!self->stopping&&!self->canceled(context.requestId)&&context.sessionId==self->sessionId()&&prompt.getNumBytesAsUTF8()<=7000,"Assistant request is canceled, excessive or belongs to an expired session.");
@@ -297,11 +308,11 @@ public:
      atomicJson(baselineFile.getSiblingFile(baselineFile.getFileName()+".json"),manifest);asset.getDynamicObject()->setProperty("baseline_path",baselineFile.getFullPathName());
     }
     auto registry=object({{"executable",self->cli.getFullPathName()},{"work_directory",self->previewDirectory().getFullPathName()},{"state_directory",self->historyDirectory.getFullPathName()},{"port",0},{"assets",juce::var(juce::Array<juce::var>{asset})}});
-    require(!self->canceled(context.requestId),"Assistant request was canceled.");atomicJson(self->manifestFile,registry);self->startServer();require(!self->canceled(context.requestId),"Assistant request was canceled.");
+    require(!self->canceled(context.requestId),"Assistant request was canceled.");atomicJson(self->manifestFile,registry);phase="Local assistant startup failed.";self->startServer();require(!self->canceled(context.requestId),"Assistant request was canceled.");
     auto request=object({{"schema_version",1},{"request_id",context.requestId},{"session_id",context.sessionId},{"prompt",prompt}});
     require(juce::JSON::toString(request,true).getNumBytesAsUTF8()<=8192,"Assistant request exceeds eight KiB.");
-    auto response=self->http("POST","/v1/request",request);complete(response,{});
-   }catch(const std::exception& error){{if(!self->canceled(context.requestId)||self->port.load()==0){std::scoped_lock lock(self->childMutex);self->child.kill();self->port=0;}}complete({},juce::String(error.what()));}
+    phase="Local assistant transport failed.";auto response=self->http("POST","/v1/request",request);complete(response,{});
+   }catch(const std::exception& error){{if(!self->canceled(context.requestId)||self->port.load()==0){std::scoped_lock lock(self->childMutex);self->child.kill();self->port=0;}}const juce::String detail(error.what());complete({},publicRequestFailure(detail)=="Local assistant request failed. Check the optional service setup."?juce::String(phase):detail);}
   });
  }
  void cancel(const juce::String& requestId){{std::scoped_lock lock(cancelMutex);canceledRequests.insert(requestId);}auto self=shared_from_this();control.addJob(new Job([self,requestId]{try{if(self->port.load()>0)self->http("POST","/v1/requests/"+requestId+"/cancel?session_id="+self->sessionId(),object({}),3000);}catch(...){}}),true);}
