@@ -51,6 +51,8 @@ Evaluations return 0 for the executed suite passing, 1 for failure and 2 for blo
 
 ## Listen and compare
 
+On the prepared local Windows checkout, double-click **Open ToneScope.cmd** to open the verified private demo without rebuilding. Save and close any older ToneScope window first. Setup, recording cues and limitations: [demo runbook](docs/showcase/demo-runbook.md). Audience scripts: [Chaos and OHLA walkthroughs](docs/showcase/walkthrough.md). The ignored local demo installation must remain present; a fresh clone does not contain it.
+
 Use headphones for live monitoring. Open Audio devices, explicitly select your input/output, then enable monitoring. A reported buffer period is not measured round-trip latency. Start with a WAV: stages begin bypassed, enable an effect, select a passage and freeze RMS match before switching Dry/Processed. Raw residual is wet minus dry; matched residual includes the displayed correction gain. Neither isolates distortion. Output safety guarding affects monitor playback, not exported analytical audio.
 
 The streaming path supports WAV up to 2 GiB/two hours; desktop inspection keeps a bounded window with full source-history processing and background replay. The eager analysis decoder remains capped at 256 MiB. Integer delay compensation does not remove frequency-dependent phase. RMS is not perceptual loudness and sample peak is not true peak. JUCE distribution licensing, signing and clean-machine qualification are required before public release.
