@@ -97,7 +97,7 @@ juce::var handleAssistantCommand(const juce::String& action,const juce::var& inp
    bridge->request(context,input["prompt"].toString(),[safe,bridge,context,generation,base](juce::var response,juce::String error){
     std::shared_ptr<Ready> ready;std::shared_ptr<Rendered> previewRender;juce::String message;
     try{
-     if(error.isNotEmpty())throw std::runtime_error("Local assistant request failed. Check the optional service setup.");
+     if(error.isNotEmpty())throw std::runtime_error(publicRequestFailure(error).toStdString());
      require(closed(response,{"schema_version","request_id","status","proposal","preview","reason","usage","trace_id","evidence_refs"})&&response["request_id"].toString()==context.requestId&&response["schema_version"].isInt()&&int(response["schema_version"])==1,"Assistant response identity was rejected.");
      const auto status=response["status"].toString();
      if(status=="ready"){

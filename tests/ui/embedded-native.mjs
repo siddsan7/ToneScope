@@ -1,5 +1,6 @@
 import {mkdir,writeFile} from 'node:fs/promises';
 import {waitForEmbeddedTarget,waitForEmbeddedFrontend} from './embedded-discovery.mjs';
+import {assistantProposalReady} from './assistant-state.mjs';
 
 // Hardware-free test of the actual bundled page and native command boundary.
 const port=Number(process.env.TONESCOPE_WEB_DEBUG_PORT ?? 9337);
@@ -99,7 +100,7 @@ if(process.env.TONESCOPE_TEST_ASSISTANT==='1'){
   await evaluate(`document.getElementById('assistant-prompt').focus()`);
   await call('Input.insertText',{text:'Make this passage louder'});
   await clickText('Ask assistant');
-  const ready=await waitFor(state=>state.assistant?.status==='ready'&&state.assistant.proposal?.previewReady,'verified assistant proposal',45000);
+  const ready=await waitFor(assistantProposalReady,'verified assistant proposal',45000);
   await new Promise(resolve=>setTimeout(resolve,200));
   await clickText('Preview suggestion');
   await waitFor(state=>state.assistant?.auditioning,'candidate audition');

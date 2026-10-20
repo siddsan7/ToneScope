@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { createGateway,generateText,Output,type LanguageModel,type ModelMessage } from 'ai';
 import { proposalSchema,renderInput,previewInput,type RequestInput } from './contracts.ts';
 import { LIMITS,type LivePolicy,type Provider,type RequestTools } from './service.ts';
-export const livePolicySchema=z.object({consent:z.literal(true),currency:z.literal('USD'),budget_usd:z.number().finite().positive(),verified_model:z.string().min(3).max(120),provider_slug:z.string().regex(/^[a-z0-9-]{1,80}$/),verified_at:z.string(),input_usd_per_million:z.number().finite().nonnegative(),output_usd_per_million:z.number().finite().nonnegative(),pricing_source:z.literal('https://ai-gateway.vercel.sh/v1/models')}).strict();
+import { livePolicySchema } from './live-policy.ts';
+export { livePolicySchema } from './live-policy.ts';
 const actionSchema=z.object({action:z.discriminatedUnion('kind',[
  z.object({kind:z.literal('get_session_snapshot')}).strict(),
  z.object({kind:z.literal('get_measurements')}).strict(),
