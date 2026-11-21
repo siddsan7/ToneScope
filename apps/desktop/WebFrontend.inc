@@ -74,7 +74,7 @@
         else if(action=="stage"&&input["index"].isInt()&&(int)input["index"]>=0&&(int)input["index"]<3)toggle(stages[(size_t)(int)input["index"]]);
         else if(action=="selection"&&number("from")&&number("to")&&(double)input["from"]>=0&&(double)input["to"]<=1&&(double)input["from"]<(double)input["to"])setSelection((double)input["from"],(double)input["to"]);
         else if(action=="seek"&&number("value")&&(double)input["value"]>=0&&(double)input["value"]<=1)seek.setValue((double)input["value"],juce::sendNotificationSync);
-        else if(action=="parameter"&&number("value")){bool found=false;for(auto& c:controls)if(c->key==input["key"].toString()){found=true;auto value=(double)input["value"];if(value>=c->slider.getMinimum()&&value<=c->slider.getMaximum())c->slider.setValue(value,juce::sendNotificationSync);else setStatus("Parameter outside its valid range.");break;}if(!found)setStatus("Unknown parameter.");}
+        else if(action=="parameter"&&number("value")){bool found=false;for(auto& c:controls)if(c->key==input["key"].toString()){found=true;auto value=(double)input["value"];if(value>=c->slider.getMinimum()&&value<=c->slider.getMaximum())c->slider.setValue(controlPrecision(value),juce::sendNotificationSync);else setStatus("Parameter outside its valid range.");break;}if(!found)setStatus("Unknown parameter.");}
         else setStatus("Invalid or unknown frontend command.");
         complete(webSnapshot());
     }

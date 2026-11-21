@@ -396,7 +396,11 @@ private:
     };
     static juce::String hashSource(const juce::File& file,const tonescope::desktop::FileCancel& cancel={}){CancelableSourceInput input(file,cancel);return juce::SHA256(input).toHexString();}
 
-    struct Control {juce::Label label;juce::Slider slider;juce::String key;float tonescope::Parameters::*member;};
+    // Engine, history and recovery store float parameters; keep each control at that
+    // precision so undo/redo/recovery restore the value the slider reports.
+    static double controlPrecision(double value){return (double)(float)value;}
+    struct FloatSlider:juce::Slider{double snapValue(double value,DragMode)override{return controlPrecision(value);}};
+    struct Control {juce::Label label;FloatSlider slider;juce::String key;float tonescope::Parameters::*member;};
 
     juce::LookAndFeel_V4 look;
 
@@ -501,7 +505,7 @@ private:
 
         static constexpr const char* keys[]{"inputDb","thresholdDb","ratio","attackMs","releaseMs","kneeDb","makeupDb","lowDb","midDb","midHz","midQ","highDb","driveDb","toneHz","outputDb","crossoverLowHz","crossoverHighHz"};
 
-        auto c=std::make_unique<Control>();c->key=keys[controls.size()];c->member=member;c->label.setText(name,juce::dontSendNotification);c->label.setFont(juce::FontOptions(13.0f));c->slider.setRange(a,b,0);c->slider.setNumDecimalPlacesToDisplay(2);c->slider.setValue(v);c->slider.setTextValueSuffix(unit);c->slider.setSliderStyle(juce::Slider::LinearHorizontal);c->slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,90,24);c->slider.setTitle(name);c->slider.setWantsKeyboardFocus(true);c->slider.onValueChange=[this,key=c->key]{parametersChanged(key=="crossoverLowHz"||key=="crossoverHighHz");};addAndMakeVisible(c->label);addAndMakeVisible(c->slider);controls.push_back(std::move(c));
+        auto c=std::make_unique<Control>();c->key=keys[controls.size()];c->member=member;c->label.setText(name,juce::dontSendNotification);c->label.setFont(juce::FontOptions(13.0f));c->slider.setRange(a,b,0);c->slider.setNumDecimalPlacesToDisplay(2);c->slider.setValue(controlPrecision(v));c->slider.setTextValueSuffix(unit);c->slider.setSliderStyle(juce::Slider::LinearHorizontal);c->slider.setTextBoxStyle(juce::Slider::TextBoxRight,false,90,24);c->slider.setTitle(name);c->slider.setWantsKeyboardFocus(true);c->slider.onValueChange=[this,key=c->key]{parametersChanged(key=="crossoverLowHz"||key=="crossoverHighHz");};addAndMakeVisible(c->label);addAndMakeVisible(c->slider);controls.push_back(std::move(c));
 
     }
 

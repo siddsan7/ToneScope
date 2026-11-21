@@ -141,6 +141,13 @@ export default function App() {
         void send(e.shiftKey ? "redo" : "undo");
         return;
       }
+      // Mirrors the native Ctrl+Shift+R recovery shortcut named in the status text;
+      // the embedded page owns keyboard focus, and this also blocks a page reload.
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "r") {
+        e.preventDefault();
+        void send("recover");
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && ["o", "s", "e"].includes(e.key.toLowerCase())) {
         e.preventDefault();
         void send(e.key.toLowerCase() === "o" ? (e.shiftKey ? "open" : "import") : e.key.toLowerCase() === "e" ? "export" : "save");
