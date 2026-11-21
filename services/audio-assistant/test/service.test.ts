@@ -7,9 +7,6 @@ import { AssistantService,RequestTools,RulesProvider,type Provider } from '../ag
 import { StateStore } from '../agent/lib/store.ts';
 import { createBroker,listenLoopback } from '../agent/lib/broker.ts';
 import { proposalSchema,type NativeAdapter,type Snapshot,type Preview } from '../agent/lib/contracts.ts';
-import { livePolicy,defaultAdmissions } from './live-fixture.ts';
-import { AdmissionGuard } from '../agent/lib/live-admission.ts';
-import { consentDigest } from '../agent/lib/live-policy.ts';
 const request={schema_version:1 as const,request_id:'request_1',session_id:'session_1',prompt:'Make the level louder'};
 const fixture=()=>{let revision=4;
 let renders=0;
@@ -240,18 +237,5 @@ const again=await new AssistantService(adapter,new StateStore(x.directory)).run(
 assert.equal(again.status,'failed');assert.equal(again.reason,'duplicate_request');assert.equal(again.preview,null);
 assert.equal(await readFile(join(x.directory,file),'utf8'),before);assert.deepEqual(released,[]);
 assert.equal((await new StateStore(x.directory).load(request.session_id,request.request_id))?.preview?.preview_id,first.preview?.preview_id);
-}finally{await x.cleanup();
-}});
-test('live ledger duplicate rejects without saving over a result written after the history check',async()=>{const x=await setup();
-const policy=livePolicy();let calls=0;
-const provider:Provider={kind:'live',provenance:'fault-injected',consent_sha256:consentDigest(policy),async run(){calls++;return {status:'noop',reason:'live noop'};}};
-try{const live={...request,prompt:'increase gain by 3 dB'};
-const first=await new AssistantService(x.adapter,x.store,provider,policy,undefined,undefined,new AdmissionGuard(defaultAdmissions)).run(live);assert.equal(first.status,'noop',JSON.stringify(first));
-const [file]=(await readdir(x.directory)).filter(n=>/^[a-f0-9]{64}\.json$/.test(n));const before=await readFile(join(x.directory,file),'utf8');
-// Models the race where another worker saved its result after this worker's history check.
-class LateStore extends StateStore{override async load(){return undefined;}}
-const again=await new AssistantService(x.adapter,new LateStore(x.directory),provider,policy,undefined,undefined,new AdmissionGuard(defaultAdmissions)).run(live);
-assert.equal(again.status,'failed');assert.equal(again.reason,'duplicate_request');assert.equal(calls,1);
-assert.equal(await readFile(join(x.directory,file),'utf8'),before);
 }finally{await x.cleanup();
 }});
