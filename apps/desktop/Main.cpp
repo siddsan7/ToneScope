@@ -878,7 +878,7 @@ private:
         const auto before=parameters();bool topology=before.order!=p.order||before.compressor!=p.compressor||before.equalizer!=p.equalizer||before.drive!=p.drive||before.oversampling!=p.oversampling||before.multiband!=p.multiband||before.crossoverLowHz!=p.crossoverLowHz||before.crossoverHighHz!=p.crossoverHighHz;
         writeParameterControls(p);parametersChanged(topology);return true;
     }
-    void undoParameters(){tonescope::Parameters p;if(history.undo(p)){restoringParameters=true;applyParameterTransaction(p);restoringParameters=false;setStatus("Undid parameter transaction.");}else setStatus("No parameter change to undo.");}
+    void undoParameters(){const auto before=tonescope::session::hashParameters(parameters());tonescope::Parameters p;if(history.undo(p)){restoringParameters=true;applyParameterTransaction(p);restoringParameters=false;setStatus("Undid parameter transaction.");assistantUndoCompleted(before);}else setStatus("No parameter change to undo.");}
     void redoParameters(){tonescope::Parameters p;if(history.redo(p)){restoringParameters=true;applyParameterTransaction(p);restoringParameters=false;setStatus("Redid parameter transaction.");}else setStatus("No parameter change to redo.");}
 
 
@@ -923,6 +923,7 @@ private:
     void shutdownAssistant(){}
     void updateAssistant(){}
     void assistantSessionChanged(){}
+    void assistantUndoCompleted(const juce::String&){}
     bool assistantPreviewActive()const{return false;}
 #endif
 };
@@ -958,6 +959,12 @@ public:
         auto args=startupArguments(commandLine);
 #if JUCE_WINDOWS
         if(args.contains("--web-ui-test")){auto debug=args.indexOf("--web-debug-port");if(debug>=0&&debug+1<args.size()&&args[debug+1].containsOnly("0123456789")){int port=args[debug+1].getIntValue();if(port>=1024&&port<=65535){auto flags="--remote-debugging-address=127.0.0.1 --remote-debugging-port="+juce::String(port);_putenv_s("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",flags.toRawUTF8());}}}
+#endif
+#if TONESCOPE_WEB_FRONTEND
+        if(const auto evaluation=args.indexOf("--private-evaluation-config");evaluation>=0){
+            try{tonescope::desktop::assistant::require(evaluation+1<args.size()&&juce::File::isAbsolutePath(args[evaluation+1]),"Explicit evaluation configuration path required.");tonescope::desktop::assistant::startupEvaluation.load(juce::File(args[evaluation+1]),args.contains("--web-ui-test"));}
+            catch(...){quit();return;}
+        }
 #endif
         window=std::make_unique<Window>(!args.contains("--screenshot")&&!args.contains("--web-ui-test"),!args.contains("--screenshot"));
 

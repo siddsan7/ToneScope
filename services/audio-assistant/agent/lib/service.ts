@@ -1,27 +1,30 @@
 import { randomUUID,createHash } from 'node:crypto';
 import { z } from 'zod';
-import { snapshotSchema, measurementSchema, previewSchema, proposalSchema, requestSchema, renderInput, previewInput, emptyInput, type Snapshot, type Measurement, type Patch, type Preview, type Proposal, type RequestInput, type NativeAdapter, type Envelope, type Usage } from './contracts.ts';
+import { snapshotSchema, measurementSchema, previewSchema, proposalSchema, requestSchema, renderInput, previewInput, emptyInput, type Snapshot, type Measurement, type Patch, type Preview, type Proposal, type RequestInput, type NativeAdapter, type Envelope, type Usage,type TraceEvent } from './contracts.ts';
 import { StateStore } from './store.ts';
 import { parseLevelIntent } from './level-intent.ts';
 import { isCompressionRequest,runCompressionRules } from './compression-rules.ts';
-export const LIMITS=Object.freeze({request_bytes:8192,measurements:32,tool_calls:8,candidates:3,render_seconds:30,wall_ms:60000,input_tokens:12000,output_tokens:4000});
+import {validateConsent,consentDigest,jsonDigest,LIVE_LIMITS,type LivePolicy} from './live-policy.ts';
+import {AdmissionGuard} from './live-admission.ts';
+export type {LivePolicy} from './live-policy.ts';
+export const LIMITS=Object.freeze({request_bytes:8192,measurements:32,...LIVE_LIMITS});
 export interface Provider {kind:'rules'|'replay'|'live';
+ provenance?:'live'|'fault-injected';
+ consent_sha256?:string;
  run(request:RequestInput,tools:RequestTools,signal:AbortSignal):Promise<{status:'noop'|'abstain';
 reason:string}|{status:'ready';
 proposal:Proposal;
 preview_id:string}>;
 }
-export type LivePolicy={consent:boolean;
-currency:'USD';
-budget_usd:number;
-verified_model:string;
-verified_at:string;
-input_usd_per_million:number;
-output_usd_per_million:number;
-pricing_source:string};
 const same=(a:Snapshot,b:Snapshot)=>a.session_id===b.session_id&&a.session_revision===b.session_revision&&a.source_sha256===b.source_sha256&&a.base_graph_sha256===b.base_graph_sha256&&JSON.stringify(a.selection_samples)===JSON.stringify(b.selection_samples)&&JSON.stringify(a.passages)===JSON.stringify(b.passages)&&JSON.stringify(a.processing)===JSON.stringify(b.processing);
 export class RequestTools {
- async releaseUnused(keep?:string){for(const id of this.previews.keys())if(id!==keep){await this.native.releasePreview?.(createHash('sha256').update(this.request.session_id).digest('hex'),id);this.previews.delete(id);}}
+ beforeGeneration:()=>Promise<void>=async()=>{};
+ accountingKnown=false;
+ readonly snapshots:Snapshot[]=[];
+ readonly events:TraceEvent[]=[];
+ private terminal=false;
+ event(category:TraceEvent['category'],extra:Partial<Pick<TraceEvent,'preview_id'|'audio_sha256'|'provider_response_id'>>={}){if(this.terminal)return;const b=this.base;this.events.push({sequence:this.events.length+1,category,...(b?{session_revision:b.session_revision,source_sha256:b.source_sha256,base_graph_sha256:b.base_graph_sha256,selection_samples:[...b.selection_samples] as [number,number]}:{}),...extra});if(category==='terminal')this.terminal=true;}
+ async releaseUnused(keep?:string){const results=await Promise.allSettled([...this.previews.keys()].filter(id=>id!==keep).map(async id=>{try{await this.native.releasePreview?.(createHash('sha256').update(this.request.session_id).digest('hex'),id);}finally{this.previews.delete(id);}}));const failed=results.find(x=>x.status==='rejected');if(failed?.status==='rejected')throw failed.reason;}
 
  readonly usage:Usage={tool_calls:0,candidate_frames:0,input_tokens:0,output_tokens:0,cost_usd:0,latency_ms:0};
  private base?:Snapshot;
@@ -48,6 +51,8 @@ this.check();
 if(s.session_id!==this.request.session_id)throw Error('cross_session');
 if(this.base&&!same(this.base,s))throw Error('stale_session');
 this.base=s;
+if(this.snapshots.length===0)this.snapshots.push(structuredClone(s));
+this.event('snapshot');
 return structuredClone(s);
 }
  private requireBase(){if(!this.base)throw Error('snapshot_required');
@@ -58,6 +63,7 @@ const data=z.array(measurementSchema).max(32).parse(await this.native.measuremen
 this.check();
 if(new Set(data.map(x=>x.measurement_id)).size!==data.length)throw Error('duplicate_measurement');
 this.evidence=data;
+this.event('measurements');
 return structuredClone(data);
 }
  private validatePatch(patch:Patch[]){const base=this.requireBase();
@@ -79,9 +85,10 @@ if(!Number.isSafeInteger(frames)||frames<base.selection_samples[1])throw Error('
 if(++this.candidateCount>3||this.usage.candidate_frames+frames>base.sample_rate*30)throw Error('render_limit');
 this.usage.candidate_frames+=frames;
 const preview=previewSchema.parse(await this.native.render(base,parameter_patch,this.signal));
-this.check();
+if(this.signal.aborted){await this.native.releasePreview?.(createHash('sha256').update(this.request.session_id).digest('hex'),preview.preview_id);this.check();}
 if(preview.session_revision!==base.session_revision||this.previews.has(preview.preview_id))throw Error('invalid_preview');
 this.previews.set(preview.preview_id,{preview,patch:structuredClone(parameter_patch),compared:false});
+this.event('render',{preview_id:preview.preview_id,audio_sha256:preview.audio_sha256});
 return structuredClone(preview);
 }
  async compare(input:unknown){this.charge();
@@ -91,6 +98,7 @@ if(!candidate)throw Error('unknown_preview');
 const result=z.array(measurementSchema).max(32).parse(await this.native.compare(this.requireBase(),candidate.preview,this.signal));
 this.check();
 candidate.compared=true;
+this.event('compare',{preview_id});
 return result;
 }
  async propose(input:unknown){this.charge();
@@ -107,6 +115,7 @@ this.check();
 if(!same(base,current))throw Error('stale_session');
 await this.native.verifyPreview?.(base,candidate.preview,this.signal);
 this.check();
+this.event('verified_preview',{preview_id:candidate.preview.preview_id,audio_sha256:candidate.preview.audio_sha256});
 return {proposal:p,preview:candidate.preview};
 }
  async call(name:string,input:unknown){if(name==='get_session_snapshot'){emptyInput.parse(input);
@@ -164,7 +173,8 @@ private deleting=new Set<string>();
 private store:StateStore;
 private provider:Provider;
 private livePolicy?:LivePolicy;
-constructor(native:NativeAdapter,store:StateStore,provider:Provider=new RulesProvider(),livePolicy?:LivePolicy,admissionLimits={global:2,per_session:1},lifetimeLimits={requests:4096,deleted_sessions:256}){this.lifetimeLimits={...lifetimeLimits};for(const value of Object.values(lifetimeLimits))if(!Number.isSafeInteger(value)||value<=0)throw Error('lifetime_limits_invalid');this.admissionLimits={...admissionLimits};for(const value of Object.values(admissionLimits))if(!Number.isSafeInteger(value)||value<=0)throw Error('admission_limits_invalid');this.native=native;
+private liveAdmission?:AdmissionGuard;
+constructor(native:NativeAdapter,store:StateStore,provider:Provider=new RulesProvider(),livePolicy?:LivePolicy,admissionLimits={global:2,per_session:1},lifetimeLimits={requests:4096,deleted_sessions:256},liveAdmission?:AdmissionGuard){this.liveAdmission=liveAdmission;this.lifetimeLimits={...lifetimeLimits};for(const value of Object.values(lifetimeLimits))if(!Number.isSafeInteger(value)||value<=0)throw Error('lifetime_limits_invalid');this.admissionLimits={...admissionLimits};for(const value of Object.values(admissionLimits))if(!Number.isSafeInteger(value)||value<=0)throw Error('admission_limits_invalid');this.native=native;
 this.store=store;
 this.provider=provider;
 this.livePolicy=livePolicy;
@@ -177,44 +187,63 @@ for(const [id,work] of this.active)if(work.session===session)this.cancel(session
 await this.store.deleteSession(session);
 await this.native.deleteSession?.(session);
 }
- async run(raw:unknown):Promise<Envelope>{if(Buffer.byteLength(JSON.stringify(raw))>8192)throw Error('request_bytes_limit');
-const r=requestSchema.parse(raw);
-if(this.deleting.has(r.session_id))throw Error('session_deleted');
-if(this.seen.has(r.request_id))throw Error('duplicate_request');
-if(this.admitted.size>=this.admissionLimits.global||[...this.admitted.values()].filter(session=>session===r.session_id).length>=this.admissionLimits.per_session)throw Error('assistant_busy');
-if(this.seen.size>=this.lifetimeLimits.requests)throw Error('request_identity_capacity');
-this.admitted.set(r.request_id,r.session_id);try{
-this.seen.add(r.request_id);
-if(await this.store.load(r.session_id,r.request_id))throw Error('duplicate_request');
-const start=Date.now();
-const controller=new AbortController();
-const timer=setTimeout(()=>controller.abort(Error('timed_out')),60000);
-timer.unref();
-this.active.set(r.request_id,{session:r.session_id,controller});
-const t=new RequestTools(r,this.native,controller.signal);
-let reservedCost=0;
-let result:Envelope={schema_version:1,request_id:r.request_id,status:'failed',proposal:null,preview:null,reason:null,usage:t.usage,trace_id:randomUUID(),evidence_refs:[]};
-try{if(this.provider.kind==='live'){const p=this.livePolicy;
-const worst=(12000*(p?.input_usd_per_million??Infinity)+4000*(p?.output_usd_per_million??Infinity))/1e6;
-if(!p?.consent||p.currency!=='USD'||!(p.budget_usd>0)||!p.verified_model||!p.pricing_source||!Number.isFinite(worst)||worst>p.budget_usd||(Date.now()-Date.parse(p.verified_at)>86400000||Date.parse(p.verified_at)>Date.now())||!Number.isFinite(Date.parse(p.verified_at)))throw Error('live_not_authorized');
-await this.store.updateBudget(p.budget_usd,worst);reservedCost=worst;
-}const output=await Promise.race([this.provider.run(r,t,controller.signal),new Promise<never>((_,reject)=>controller.signal.addEventListener('abort',()=>reject(controller.signal.reason),{once:true}))]);
-t.check();
-if(t.usage.input_tokens>12000||t.usage.output_tokens>4000)throw Error('token_limit');
-if(!Number.isFinite(t.usage.cost_usd)||t.usage.cost_usd<0||(this.provider.kind==='live'&&t.usage.cost_usd>(this.livePolicy?.budget_usd??0)))throw Error('cost_limit');
-if(output.status==='ready'){const evaluated=await t.propose(output.proposal);
-if(evaluated.preview.preview_id!==output.preview_id)throw Error('preview_binding');
-result={...result,status:'ready',...evaluated,evidence_refs:evaluated.proposal.evidence_refs};
-}else result={...result,status:output.status,reason:output.reason.slice(0,500)};
-}catch(e){const reason=controller.signal.aborted?String(controller.signal.reason?.message):e instanceof Error?e.message:'request_failed';
-result={...result,status:reason==='canceled'?'canceled':reason==='timed_out'?'timed_out':'failed',reason:/^[a-z_]{1,80}$/.test(reason)?reason:'request_failed'};
-}finally{clearTimeout(timer);
-this.active.delete(r.request_id);
-result.usage.latency_ms=Date.now()-start;
-}if(reservedCost>0){await this.store.updateBudget(this.livePolicy!.budget_usd,t.usage.cost_usd-reservedCost,true);}
-await t.releaseUnused(result.preview?.preview_id);
-if(!this.deleting.has(r.session_id)){const removed=await this.store.save(r.session_id,result);for(const item of removed)await this.native.releasePreview?.(item.session_hash,item.preview_id);}
-return result;
-}finally{this.admitted.delete(r.request_id);}
-}
+ async run(raw:unknown):Promise<Envelope>{
+  if(Buffer.byteLength(JSON.stringify(raw))>8192)throw Error('request_bytes_limit');
+  const r=requestSchema.parse(raw);
+  if(this.deleting.has(r.session_id))throw Error('session_deleted');
+  if(this.seen.has(r.request_id))throw Error('duplicate_request');
+  if(this.admitted.size>=this.admissionLimits.global||[...this.admitted.values()].filter(session=>session===r.session_id).length>=this.admissionLimits.per_session)throw Error('assistant_busy');
+  if(this.seen.size>=this.lifetimeLimits.requests)throw Error('request_identity_capacity');
+  // Register cancellation before the first asynchronous operation, including history I/O.
+  const start=Date.now(),controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(Error('timed_out')),LIMITS.wall_ms);timer.unref();
+  this.active.set(r.request_id,{session:r.session_id,controller});this.admitted.set(r.request_id,r.session_id);this.seen.add(r.request_id);
+  const t=new RequestTools(r,this.native,controller.signal);
+  let result:Envelope={schema_version:1,request_id:r.request_id,status:'failed',proposal:null,preview:null,reason:null,usage:{...t.usage},trace_id:randomUUID(),evidence_refs:[]};
+  // A duplicate belongs to an earlier attempt: report it, but never persist over that attempt's record.
+  let policy:LivePolicy|undefined,reserved=0,admittedLive=false,duplicate=false;
+  const binding={session_id:r.session_id,request_id:r.request_id,request_sha256:jsonDigest(r)};
+  let abortListener:()=>void=()=>{};
+  const aborted=new Promise<never>((_,reject)=>{abortListener=()=>reject(controller.signal.reason);controller.signal.addEventListener('abort',abortListener,{once:true});});
+  // Attach immediately: an abort during history loading must not be an unhandled rejection.
+  void aborted.catch(()=>{});
+  try{
+   try{
+    if(await Promise.race([this.store.load(r.session_id,r.request_id),aborted])){duplicate=true;throw Error('duplicate_request');}
+    t.check();
+    if(this.provider.kind==='live'){
+     try{policy=validateConsent(this.livePolicy);}catch{throw Error('live_not_authorized');}
+     if(this.provider.consent_sha256!==consentDigest(policy))throw Error('provider_consent_mismatch');
+     if(!this.liveAdmission)throw Error('live_admission_manifest_required');this.liveAdmission.validate(policy,r);
+     reserved=(LIMITS.input_tokens*policy.input_usd_per_million+LIMITS.output_tokens*policy.output_usd_per_million)/1e6;
+     if(reserved>policy.budget_usd)throw Error('live_not_authorized');
+     admittedLive=await this.store.reserveLive(policy,binding,reserved,this.admissionLimits);
+     if(!admittedLive){duplicate=true;throw Error('duplicate_request');}
+     result.authorization={schema_version:1,experiment_id:policy.experiment_id,budget_id:policy.budget_id,consent_sha256:consentDigest(policy),protocol_sha256:policy.protocol_sha256,task_sha256:policy.task_sha256,schedule_sha256:policy.schedule_sha256,provenance:this.provider.provenance??'fault-injected',accounting_known:false,reserved_usd:reserved};
+     t.event('admission');t.event('reservation');
+     t.beforeGeneration=async()=>{t.check();await this.store.beginGeneration(policy!,binding);t.check();t.event('generation_start');};
+    }
+    t.check();const output=await Promise.race([this.provider.run(r,t,controller.signal),aborted]);t.check();
+    if(t.usage.input_tokens>LIMITS.input_tokens||t.usage.output_tokens>LIMITS.output_tokens)throw Error('token_limit');
+    if(!Number.isFinite(t.usage.cost_usd)||t.usage.cost_usd<0||(this.provider.kind==='live'&&t.usage.cost_usd>reserved))throw Error('cost_limit');
+    if(output.status==='ready'){const evaluated=await t.propose(output.proposal);if(evaluated.preview.preview_id!==output.preview_id)throw Error('preview_binding');result={...result,status:'ready',...evaluated,evidence_refs:evaluated.proposal.evidence_refs};}
+    else result={...result,status:output.status,reason:output.reason.slice(0,500)};
+   }catch(e){const reason=controller.signal.aborted?String(controller.signal.reason?.message):e instanceof Error?e.message:'request_failed';if(reason==='assistant_busy'&&!admittedLive){this.seen.delete(r.request_id);throw e;}result={...result,status:reason==='canceled'?'canceled':reason==='timed_out'?'timed_out':'failed',reason:/^[a-z_]{1,80}$/.test(reason)?reason:'request_failed'};}
+   // Detach exported usage from all mutable provider state before settlement or persistence.
+   const known=admittedLive&&t.accountingKnown&&!controller.signal.aborted;
+   result.usage={...t.usage,latency_ms:Date.now()-start,...(admittedLive&&!known?{cost_usd:reserved,input_tokens:LIMITS.input_tokens,output_tokens:LIMITS.output_tokens}:{})};
+   if(result.authorization){result.authorization.accounting_known=known;result.snapshots=structuredClone(t.snapshots);t.event('terminal');result.trace={schema_version:1,trace_id:result.trace_id,attempt_id:r.request_id,request_id:r.request_id,session_id:r.session_id,experiment_id:policy!.experiment_id,consent_sha256:consentDigest(policy),provenance:result.authorization.provenance,events:structuredClone(t.events)};}
+   if(Buffer.byteLength(JSON.stringify(result))>64000)result={...result,status:'failed',proposal:null,preview:null,evidence_refs:[],reason:'response_bytes_limit'};
+   try{
+    if(admittedLive)await this.store.settleLive(policy!,binding,{cost_usd:result.usage.cost_usd,input_tokens:result.usage.input_tokens,output_tokens:result.usage.output_tokens,known});
+    if(!duplicate&&!this.deleting.has(r.session_id)){const removed=await this.store.save(r.session_id,result);for(const item of removed)await this.native.releasePreview?.(item.session_hash,item.preview_id);}
+    return result;
+   }catch(error){await t.releaseUnused();throw error;}
+  }finally{
+   clearTimeout(timer);controller.signal.removeEventListener('abort',abortListener);
+   this.active.delete(r.request_id);this.admitted.delete(r.request_id);
+   // Even failed ledger/history writes cannot bypass native cleanup.
+   try{if(admittedLive)await this.store.releaseLiveAdmission(policy!,binding);}finally{await t.releaseUnused(result.preview?.preview_id);}
+  }
+ }
 }

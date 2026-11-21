@@ -10,6 +10,7 @@ export type AssistantState = {
   status: "unavailable" | "idle" | "running" | "ready" | "error";
   message?: string;
   requestId?: string;
+  evaluation?: { provenance: "live" | "fault-injected"; model: string; budgetUsd: number };
   auditioning?: boolean;
   auditionSource?: "baseline" | "candidate";
   matched?: boolean;

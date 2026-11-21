@@ -107,6 +107,9 @@ jobs:
             artifacts/**/*.ts
             !artifacts/package/**
             !artifacts/assistant-bundle/**
+            # Private prompts, consent, transport and source audio require explicit review.
+            !artifacts/live-model/**
+            !artifacts/live-model-p1/**
           retention-days: ${{ github.event_name == 'schedule' && 90 || 30 }}
       # This is a development gate. Production DSP/device/human/model gates are
       # separately required by release-check and cannot be inferred from CI.

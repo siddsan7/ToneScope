@@ -701,7 +701,9 @@ export default function App() {
                 <div className="assistant">
                   <AudioLines size={28} />
                   <h2>Make a measured change.</h2>
-                  <p>Offline level assistant · suggestions use measured RMS and peak. Tonal requests require a separately configured model.</p>
+                  <p>{model?.assistant?.evaluation
+                    ? `Private ${model.assistant.evaluation.provenance} evaluation · ${model.assistant.evaluation.model} · USD ${model.assistant.evaluation.budgetUsd.toFixed(2)} ceiling. Text and scalar measurements are approved by the private host configuration. Audio remains local. Every change needs acceptance.`
+                    : "Offline level assistant · suggestions use measured RMS and peak. Tonal requests require a separately configured model."}</p>
                   <p>
                     {model?.assistant?.message ||
                       "The assistant service is not connected. Audio stays on this computer."}
