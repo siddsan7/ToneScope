@@ -102,10 +102,16 @@ export class GatewayProvider implements Provider {
   const p=this.policy;const model=await this.model(signal);const snapshot=await tools.snapshot();const measurements=await tools.measurements();
   const messages:ModelMessage[]=[{role:'user',content:JSON.stringify({request,snapshot,measurements})}];
   const previews:Array<{id:string;patch:z.infer<typeof renderInput>['parameter_patch']}>=[];
+  let prior:{input_tokens:number;message_bytes:number}|undefined;
   for(let step=0;step<LIMITS.tool_calls;step++){
    tools.check();
-   // UTF-8 byte count plus framing is a conservative tokenizer-independent reservation for text-only calls.
-   const inputBound=Buffer.byteLength(SYSTEM+JSON.stringify(messages)+providerSchemaText)+512;
+   // First call: UTF-8 byte count plus framing is a conservative tokenizer-independent reservation for text-only calls.
+   // After a call with provider-reported usage, the unchanged prompt prefix is charged at that reported
+   // count and only the appended messages at their byte count. This assumes the provider tokenizes the
+   // prefix identically on the next call; a call that reports more than its bound still fails closed below.
+   const messageBytes=Buffer.byteLength(JSON.stringify(messages));
+   const byteBound=Buffer.byteLength(SYSTEM+providerSchemaText)+messageBytes+512;
+   const inputBound=prior?Math.min(byteBound,prior.input_tokens+messageBytes-prior.message_bytes+512):byteBound;
    const outputCap=Math.min(2048,LIMITS.output_tokens-tools.usage.output_tokens);
    if(outputCap<=0||tools.usage.input_tokens+inputBound>LIMITS.input_tokens)throw Error('token_budget_reservation');
    const reservedCost=(inputBound*p.input_usd_per_million+outputCap*p.output_usd_per_million)/1e6;
@@ -144,6 +150,7 @@ export class GatewayProvider implements Provider {
    if(input!>inputBound||output!>outputCap)throw Error('provider_usage_exceeded_reservation');
    if(result.response.modelId!==p.verified_model)throw Error('provider_model_mismatch');
    tools.accountingKnown=true;
+   prior={input_tokens:input!,message_bytes:messageBytes};
    tools.check();const action=result.output.action;
    if(action.kind==='noop'||action.kind==='abstain')return {status:action.kind,reason:action.reason};
    if(action.kind==='propose_change'){
