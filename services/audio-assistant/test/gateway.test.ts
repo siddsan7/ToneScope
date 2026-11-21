@@ -30,6 +30,7 @@ test('Gateway classifies SDK output failures without retaining response text', a
   {text:'```json\n'+JSON.stringify({action:{kind:'noop',reason:privateText}})+'\n```', finish:'stop', reason:'provider_output_json_invalid_accounting_reserved'},
   {text:JSON.stringify({action:{kind:'noop',reason:privateText}})+JSON.stringify({action:{kind:'abstain',reason:privateText}}), finish:'stop', reason:'provider_output_json_invalid_accounting_reserved'},
   {text:JSON.stringify({action:{kind:'get_session_snapshot',[privateText]:1}}), finish:'stop', reason:'provider_output_schema_invalid_accounting_reserved'},
+  {text:JSON.stringify({action:{kind:'noop',reason:privateText}})+'\u00a0'+JSON.stringify({action:{kind:'noop',reason:privateText}}), finish:'stop', reason:'provider_output_json_invalid_accounting_reserved'},
  ] as const;
  // Content-free shape facts expected for each JSON/schema failure, in case order.
  const shapes=new Map<number,object>([
@@ -38,6 +39,7 @@ test('Gateway classifies SDK output failures without retaining response text', a
   [7,{starts_with_brace:false,ends_with_brace:false,has_code_fence:true,top_level_json_values:0}],
   [8,{starts_with_brace:true,ends_with_brace:true,has_code_fence:false,top_level_json_values:2,trailing_unparsed_bytes:0}],
   [9,{starts_with_brace:true,ends_with_brace:true,top_level_json_values:1}],
+  [10,{starts_with_brace:true,ends_with_brace:true,has_code_fence:false,top_level_json_values:1}],
  ]);
  for (const [index, {text, finish, reason}] of cases.entries()) {
   const directory = await mkdtemp(join(process.cwd(), '.test-runtime-gateway-diagnostic-'));

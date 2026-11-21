@@ -49,7 +49,7 @@ const schemaKeys=new Set<string>();
 (function collect(node:unknown){if(Array.isArray(node)){node.forEach(collect);return;}if(node&&typeof node==='object'){for(const [k,v] of Object.entries(node)){if(k==='properties'&&v&&typeof v==='object')for(const name of Object.keys(v))schemaKeys.add(name);collect(v);}}})(providerSchema);
 /** Counts complete JSON values at the start of the text and the bytes left after them. */
 function jsonValueShape(text:string){
- let index=0,count=0;const ws=/\s/;
+ let index=0,count=0;const ws=/[ \t\n\r]/;
  for(;;){
   while(index<text.length&&ws.test(text[index]))index++;
   if(index>=text.length)break;
@@ -59,7 +59,7 @@ function jsonValueShape(text:string){
     if(quoted){if(c==='\\')end++;else if(c==='"'){quoted=false;if(depth===0){end++;break;}}continue;}
     if(c==='"')quoted=true;else if(c==='{'||c==='[')depth++;else if((c==='}'||c===']')&&--depth===0){end++;break;}
    }
-  }else while(end<text.length&&!/[\s{}[\],"]/.test(text[end]))end++;
+  }else while(end<text.length&&!/[ \t\n\r{}[\],"]/.test(text[end]))end++;
   try{JSON.parse(text.slice(index,end));}catch{break;}
   count++;index=end;
  }

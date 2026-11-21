@@ -28,5 +28,7 @@ const provider=new GatewayProvider(policy,process.env.AI_GATEWAY_API_KEY);
 const service=new AssistantService(adapter,new StateStore(manifest.state_directory),provider,policy,undefined,undefined,admission);
 const result=await service.run(input.request);
 // Content-free shape facts for a rejected output stay outside the envelope that native and history validators check.
-const diagnostic=provider.lastOutputDiagnostic?.request_id===input.request.request_id?provider.lastOutputDiagnostic:undefined;
+const latest=provider.lastOutputDiagnostic;
+// A cancellation or timeout can win after an output failure; only the failure it explains carries it.
+const diagnostic=latest?.request_id===input.request.request_id&&result.status==='failed'&&result.reason===`provider_output_${latest.category}_accounting_reserved`?latest:undefined;
 process.stdout.write(JSON.stringify({schema_version:1,request_sha256:jsonDigest(input.request),result,...(diagnostic?{provider_output_diagnostic:diagnostic}:{}),...(result.preview?{private_preview_path:adapter.previewPath(input.request.session_id,result.preview.preview_id)}:{})})+'\n');
