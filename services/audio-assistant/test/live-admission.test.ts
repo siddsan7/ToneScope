@@ -1,0 +1,14 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm,readFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {AdmissionGuard,admissionsDigest,promptDigest,admissionsSchema} from '../agent/lib/live-admission.ts';
+import {consentDigest} from '../agent/lib/live-policy.ts';
+import {AssistantService,type Provider} from '../agent/lib/service.ts';
+import {StateStore} from '../agent/lib/store.ts';
+import type {NativeAdapter} from '../agent/lib/contracts.ts';
+import {livePolicy} from './live-fixture.ts';
+const req={schema_version:1 as const,request_id:'lifecycle_1',session_id:'random_native_session',prompt:'keep level'};
+const rows=[{request_id:'lifecycle_1',prompt_sha256:promptDigest(req.prompt),role:'lifecycle' as const},{request_id:'scored_1',prompt_sha256:promptDigest(req.prompt),role:'scored' as const}];
+test('full frozen admissions digest and roles prevent borrowing, unknown prompts and changed schedules',()=>{const p={...livePolicy(),admissions_sha256:admissionsDigest(rows)};assert.equal(admissionsDigest([...rows].reverse()),p.admissions_sha256);const native=new AdmissionGuard(rows,['lifecycle']);assert.equal(native.validate(p,req),'lifecycle');assert.throws(()=>native.validate(p,{...req,request_id:'scored_1'}),/request_not_scheduled/);assert.throws(()=>native.validate(p,{...req,prompt:req.prompt+' '}),/request_not_scheduled/);assert.throws(()=>native.validate({...p,admissions_sha256:'a'.repeat(64)},req),/manifest_digest_mismatch/);assert.equal(admissionsSchema.safeParse([...rows,rows[0]]).success,false);assert.equal(admissionsSchema.safeParse(Array.from({length:7},(_,i)=>({...rows[0],request_id:'lifecycle_'+i}))).success,false);});
+test('live admission guard is required and checked before reservation, metadata, provider or native calls',async()=>{const directory=await mkdtemp(join(process.cwd(),'.test-runtime-admission-'));try{const p={...livePolicy(),admissions_sha256:admissionsDigest(rows)};let calls=0;const provider:Provider={kind:'live',consent_sha256:consentDigest(p),async run(){calls++;return {status:'noop',reason:'should not run'};}};const native:NativeAdapter={async snapshot(){throw Error('unexpected_native');},async measurements(){throw Error('unexpected_native');},async render(){throw Error('unexpected_native');},async compare(){throw Error('unexpected_native');}};const store=new StateStore(directory);assert.equal((await new AssistantService(native,store,provider,p).run(req)).reason,'live_admission_manifest_required');await store.deleteSession(req.session_id);assert.equal((await new AssistantService(native,store,provider,p,undefined,undefined,new AdmissionGuard(rows,['scored'])).run(req)).reason,'request_not_scheduled');assert.equal(calls,0);await assert.rejects(readFile(join(directory,'budget-v2.json')),/ENOENT/);}finally{await rm(directory,{recursive:true,force:true});}});

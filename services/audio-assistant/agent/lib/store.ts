@@ -1,10 +1,17 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename, writeFile, unlink, readdir, stat } from 'node:fs/promises';
+import { mkdir, open, readFile, writeFile, unlink, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Envelope } from './contracts.ts';
+import {LiveLedger,type LiveBinding,type Settlement} from './live-ledger.ts';
+import type {LivePolicy} from './live-policy.ts';
+import {replaceAtomically} from './atomic-replace.ts';
 
 /** Persists structured results only. Prompt text, paths, handles, audio and credentials are excluded. */
 export class StateStore {
+ reserveLive(policy:LivePolicy,binding:LiveBinding,reserved:number,limits?:{global:number,per_session:number}){return new LiveLedger(this.directory).reserve(policy,binding,reserved,limits);}
+ beginGeneration(policy:LivePolicy,binding:LiveBinding){return new LiveLedger(this.directory).generation(policy,binding);}
+ settleLive(policy:LivePolicy,binding:LiveBinding,terminal:Settlement){return new LiveLedger(this.directory).settle(policy,binding,terminal);}
+ releaseLiveAdmission(policy:LivePolicy,binding:LiveBinding){return new LiveLedger(this.directory).releaseAdmission(policy,binding);}
  private directory:string;
  private ledgerQueue:Promise<unknown>=Promise.resolve();
  private historyQueue:Promise<unknown>=Promise.resolve();
@@ -27,7 +34,7 @@ export class StateStore {
  }
  private async atomic(path:string,data:unknown){
   const temp=path+'.'+randomUUID()+'.tmp';
-  try{await writeFile(temp,JSON.stringify(data),{mode:0o600,flag:'wx'});await rename(temp,path);}finally{try{await unlink(temp);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
+  try{await writeFile(temp,JSON.stringify(data),{mode:0o600,flag:'wx'});await replaceAtomically(temp,path);}finally{try{await unlink(temp);}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
  }
  async save(session:string,result:Envelope){return this.history(async()=>{
   await mkdir(this.directory,{recursive:true});

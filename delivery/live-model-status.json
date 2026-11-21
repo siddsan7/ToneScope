@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "updated_local_date": "2026-11-20",
+  "protocol_sha256": "5049a18bc38b3584961ca7e8dcfd7b984e58be3188f620f39a4e55597fc70aee",
+  "goal_status": "blocked",
+  "live_authorized": false,
+  "stages": {
+    "P0": {
+      "status": "passed",
+      "checks": [
+        {
+          "command": "python evals/live_protocol.py",
+          "exit_code": 0
+        },
+        {
+          "command": "python -m unittest discover -s tests/integration -p test_live_protocol.py",
+          "passed": 7,
+          "failed": 0
+        },
+        {
+          "command": "python -m unittest discover -s tests/integration -p test_level_eval.py",
+          "passed": 8,
+          "failed": 0
+        },
+        {
+          "command": "python -m unittest discover -s tests/integration -p test_compression_eval.py",
+          "passed": 4,
+          "failed": 0
+        }
+      ],
+      "independent_review": {
+        "reviewer": "/root/protocol_review",
+        "status": "passed",
+        "unresolved_blockers": 0
+      },
+      "evidence_directory": "artifacts/live-model/p0"
+    },
+    "P1": {
+      "status": "passed",
+      "worktree": ".worktrees/live-evaluation",
+      "reviewed_base_commit": "9a3df04c1e3f952f6e1e7ae44f1618dd22f42b54",
+      "checks": {
+        "native_tests_passed": 18,
+        "tests_skipped": 0,
+        "paired_baselines_completed": 112,
+        "infrastructure_failures": 0,
+        "blocked_model_attempts": 168,
+        "model_attempts": 0
+      },
+      "independent_review": {
+        "reviewer": "/root/evaluation_final_review",
+        "base_status": "passed",
+        "report_regrade": "exact_summary_match",
+        "stop_condition_followup": "passed: integration_review,28/28,0skips",
+        "complete_stop_classifier": "passed: integration_review,30/30,0skips; default halt except3audited provider outcomes"
+      },
+      "followup_checks": {
+        "live_regressions_passed": 30,
+        "failed": 0,
+        "skipped": 0,
+        "failing_before_probes": 6
+      },
+      "evidence_directory": "artifacts/live-model/p1",
+      "integrated": true
+    },
+    "P2": {
+      "status": "passed",
+      "worktree": ".worktrees/live-service",
+      "reviewed_base_commit": "344d3dbfe4bcbe2ad4b6333d12f8dec777edfd4c",
+      "source_composition_sha256": "896560d064a30e15c282358692769e8a4c347448ffcee792f2c0a701e3c550f1",
+      "base_checks": {
+        "typecheck": "passed",
+        "tests_passed": 211,
+        "tests_failed": 0,
+        "tests_skipped": 0,
+        "build": "passed",
+        "recovery_passed": 40,
+        "recovery_failed": 0
+      },
+      "independent_review": {
+        "reviewer": "/root/protocol_review",
+        "base_status": "passed",
+        "focused_tests_passed": 27,
+        "recovery_passed": 40,
+        "lost_ledger_followup": "passed: integration_review,56/56,0skips",
+        "current_public_pricing": "passed: integration_review,15/15,0skips"
+      },
+      "followup_check": {
+        "name": "lost_initialized_ledger_must_fail_closed",
+        "status": "passed",
+        "full_service_tests": 221,
+        "skipped": 0,
+        "typecheck": "passed",
+        "build": "passed"
+      },
+      "evidence_directory": "artifacts/live-model/p2",
+      "integrated": true
+    },
+    "P3": {
+      "status": "passed",
+      "owner": "/root/desktop_lifecycle",
+      "worktree": ".worktrees/live-desktop",
+      "step1": {
+        "status": "passed",
+        "build": "passed",
+        "native_tests_passed": 10,
+        "startup_singleton": "passed",
+        "host_canonical_offline_tests_passed": 6,
+        "tests_skipped": 0,
+        "node_native_configurations": 519,
+        "typecheck": "passed"
+      },
+      "independent_review": "passed: integration_review;14 source/87 artifact/2072 runtime hashes;14 workflows audited;2 native and5 host/canonical tests",
+      "integrated": true
+    },
+    "P4": {
+      "status": "in_progress",
+      "checks_plan": "delivery/live-model-integration.md",
+      "evidence_directory": "artifacts/live-model/p4",
+      "live_authorized": false,
+      "final_evidence_directory": "artifacts/live-model/p4/ready",
+      "superseded_rehearsal": "p4 root and p4/final receipts predate complete default-halt classification; ready receipts are authoritative"
+    },
+    "P4-live": {
+      "status": "setup_failed_scoring_blocked",
+      "user_approval": {
+        "local_date": "2026-10-27",
+        "record": "artifacts/live-model/user-approval.json",
+        "model": "openai/gpt-4.1-mini",
+        "provider_slug": "azure",
+        "budget_usd": 2.02
+      },
+      "paid_setup_attempts": 4,
+      "attempt_dates": "2026-11-11 to 2026-11-12",
+      "generations": 7,
+      "reserved_usd": 0.0448,
+      "scored_requests": 0,
+      "blocker": "AI Gateway credit balance is $0; no further paid attempt is possible until it is funded and a new attempt is separately approved",
+      "last_failure": "setup reply 2 failed as provider_output_json_invalid_accounting_reserved with finish reason stop; cause unknown because no content-free shape facts were retained",
+      "protocol_deviation": "the ledger was manually transferred between consent versions (budget-transfer.json); neither delivery/live-model-protocol.md nor the code defines such a transfer",
+      "state_records": [
+        "artifacts/live-model/current.json",
+        "artifacts/live-model/recovery-current.json",
+        "artifacts/live-model/output-diagnostic-current.json"
+      ]
+    },
+    "P5": {
+      "status": "blocked",
+      "reason": "P4-live evidence required"
+    },
+    "P6": {
+      "status": "blocked",
+      "reason": "P5 plus real human participation required"
+    }
+  }
+}

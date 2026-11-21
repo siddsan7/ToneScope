@@ -229,3 +229,13 @@ test('deleted session cap never evicts in-flight tombstones and repeated deletio
   assert.throws(()=>new AssistantService(x.adapter,x.store,undefined,undefined,undefined,{requests:2,deleted_sessions:Infinity}),/lifetime_limits_invalid/);
  }finally{release();await x.cleanup();}
 });
+test('persisted duplicate is rejected without rewriting the stored result or releasing its preview',async()=>{const x=await setup();
+try{const first=await x.service.run(request);assert.equal(first.status,'ready');
+const [file]=await readdir(x.directory);const before=await readFile(join(x.directory,file),'utf8');
+const released:string[]=[];const adapter={...x.adapter,async releasePreview(_session:string,id:string){released.push(id);}};
+const again=await new AssistantService(adapter,new StateStore(x.directory)).run(request);
+assert.equal(again.status,'failed');assert.equal(again.reason,'duplicate_request');assert.equal(again.preview,null);
+assert.equal(await readFile(join(x.directory,file),'utf8'),before);assert.deepEqual(released,[]);
+assert.equal((await new StateStore(x.directory).load(request.session_id,request.request_id))?.preview?.preview_id,first.preview?.preview_id);
+}finally{await x.cleanup();
+}});

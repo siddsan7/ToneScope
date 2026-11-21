@@ -83,8 +83,75 @@ inline void atomicJson(const juce::File& destination,const juce::var& data){
  require(temp.getFile().replaceWithText(juce::JSON::toString(data)),"Cannot write private assistant state.");
  protectPrivate(temp.getFile());require(temp.overwriteTargetFileWithTemporary(),"Cannot publish private assistant state.");
 }
+inline juce::String canonicalJson(const juce::var& value){
+ if(auto* entries=value.getArray()){juce::StringArray parts;for(const auto& entry:*entries)parts.add(canonicalJson(entry));return "["+parts.joinIntoString(",")+"]";}
+ if(auto* object=value.getDynamicObject()){juce::StringArray keys,parts;for(const auto& entry:object->getProperties())keys.add(entry.name.toString());keys.sort(false);for(const auto& key:keys)parts.add(juce::JSON::toString(juce::var(key),true)+":"+canonicalJson(value[juce::Identifier(key)]));return "{"+parts.joinIntoString(",")+"}";}
+ return juce::JSON::toString(value,true);
+}
+inline juce::String jsonDigest(const juce::var& value){auto text=canonicalJson(value);return juce::SHA256(text.toRawUTF8(),text.getNumBytesAsUTF8()).toHexString();}
+inline bool equivalentJson(const juce::var& a,const juce::var& b){
+ if(finiteNumber(a)||finiteNumber(b))return finiteNumber(a)&&finiteNumber(b)&&double(a)==double(b);
+ if(a.isBool()||b.isBool())return a.isBool()&&b.isBool()&&bool(a)==bool(b);
+ if(a.isString()||b.isString())return a.isString()&&b.isString()&&a.toString()==b.toString();
+ if(a.isArray()||b.isArray()){
+  const auto* left=a.getArray();const auto* right=b.getArray();if(!left||!right||left->size()!=right->size())return false;
+  for(int i=0;i<left->size();++i)if(!equivalentJson((*left)[i],(*right)[i]))return false;return true;
+ }
+ if(a.isObject()||b.isObject()){
+  const auto* left=a.getDynamicObject();const auto* right=b.getDynamicObject();if(!left||!right||left->getProperties().size()!=right->getProperties().size())return false;
+  for(const auto& entry:left->getProperties())if(!b.hasProperty(entry.name)||!equivalentJson(entry.value,b[entry.name]))return false;return true;
+ }
+ return a.isVoid()&&b.isVoid();
+}
+struct Evaluation {
+ juce::File file;juce::var document;
+ bool enabled()const{return document.isObject();}
+ juce::var policy()const{return document["policy"];}
+ void load(const juce::File& path,bool testMode){
+  require(path.existsAsFile()&&!path.isSymbolicLink()&&path.getSize()<=131072,"Invalid private evaluation configuration.");
+  document=juce::JSON::parse(path);file=path;auto p=policy();const auto mode=document["mode"].toString();
+  require(int(document["schema_version"])==1&&(mode=="live"||mode=="fault-injected")&&(mode!="fault-injected"||testMode),"Private evaluation mode is not authorized.");
+  require((mode=="fault-injected")==document.hasProperty("test_fetch_module"),"Production evaluation cannot use a test seam.");
+  require(document["state_directory"].isString()&&juce::File::isAbsolutePath(document["state_directory"].toString()),"Private evaluation state path must be absolute.");
+  // Node owns canonical policy encoding. Hash its exact approved bytes: JUCE's
+  // decimal parser cannot independently reconstruct every ECMAScript double.
+  const auto canonical=document["canonical_policy_json"];
+  require(canonical.isString()&&canonical.toString().getNumBytesAsUTF8()<=16384,"Missing or excessive canonical policy.");
+  const auto canonicalText=canonical.toString();const auto parsed=juce::JSON::parse(canonicalText);
+  require(parsed.isObject()&&equivalentJson(parsed,p),"Private evaluation policy differs from canonical text.");
+  const auto policyDigest=juce::SHA256(canonicalText.toRawUTF8(),canonicalText.getNumBytesAsUTF8()).toHexString();
+  require(bool(p["consent"])&&int(p["schema_version"])==1&&digestText(document["consent_sha256"].toString())&&policyDigest==document["consent_sha256"].toString(),"Private evaluation consent differs.");
+  require(opaqueId(p["experiment_id"].toString())&&opaqueId(p["budget_id"].toString())&&finiteNumber(p["budget_usd"])&&double(p["budget_usd"])>0,"Invalid private evaluation budget.");
+  const auto age=juce::Time::getCurrentTime().toMilliseconds()-juce::Time::fromISO8601(p["verified_at"].toString()).toMilliseconds();require(age>=0&&age<=86400000,"Private evaluation consent is stale.");
+  auto* rows=document["admissions"].getArray();require(rows&&rows->size()==180&&jsonDigest(document["admissions"])==p["admissions_sha256"].toString(),"Private evaluation admissions differ.");
+  std::set<juce::String> ids;int lifecycle=0,setup=0,scored=0;juce::String previous;
+  for(const auto& row:*rows){auto id=row["request_id"].toString(),role=row["role"].toString();require(closed(row,{"request_id","prompt_sha256","role"})&&opaqueId(id)&&digestText(row["prompt_sha256"].toString())&&ids.insert(id).second&&(previous.isEmpty()||previous.compare(id)<0),"Invalid frozen admission.");previous=id;if(role=="lifecycle")++lifecycle;else if(role=="setup")++setup;else if(role=="scored")++scored;else require(false,"Invalid admission role.");}
+  require(opaqueId(document["lifecycle_request_id"].toString()),"Explicit lifecycle request identity required.");
+  require(lifecycle==6&&setup==6&&scored==168,"Incomplete frozen admission schedule.");
+ }
+ juce::String requestId(const juce::String& prompt)const{
+  const auto hash=juce::SHA256(prompt.toRawUTF8(),prompt.getNumBytesAsUTF8()).toHexString();
+  for(const auto& row:*document["admissions"].getArray())if(row["request_id"]==document["lifecycle_request_id"]&&row["role"].toString()=="lifecycle"&&row["prompt_sha256"].toString()==hash)return row["request_id"].toString();
+  throw std::runtime_error("Request is not a frozen lifecycle admission.");
+ }
+};
+inline Evaluation startupEvaluation;
+inline juce::var evaluationDescriptors(const juce::var& descriptors,const Evaluation& evaluation){
+ if(!evaluation.enabled())return descriptors;
+ juce::Array<juce::var> result;const bool compression=evaluation.document["lifecycle_request_id"].toString()=="r_lifecycle_compression_apply_undo";
+ const juce::String allowed=compression?"thresholdDb":"outputDb";
+ for(const auto& descriptor:*descriptors.getArray()){
+  const auto id=descriptor["parameter_id"].toString();
+  if(id==allowed)result.add(descriptor);
+  else if(compression&&(id=="inputDb"||id=="outputDb"||id=="ratio"||id=="attackMs"||id=="releaseMs"||id=="kneeDb"||id=="makeupDb")){
+   auto fixed=juce::JSON::parse(juce::JSON::toString(descriptor));fixed.getDynamicObject()->setProperty("min",fixed["value"]);fixed.getDynamicObject()->setProperty("max",fixed["value"]);result.add(fixed);
+  }
+ }
+ require(result.size()==(compression?8:1),"Evaluation authorized controls unavailable.");return result;
+}
 struct Context {
  juce::String sessionId,requestId,sourceHash,graphHash;
+ Evaluation evaluation;
  juce::File sourceFile;
  uint64_t revision=0;
  int64_t first=0,last=0,cacheOffset=0;
@@ -132,7 +199,9 @@ inline tonescope::Parameters patchParameters(const Context& context,const juce::
  auto parameters=tonescope::session::parametersToVar(context.parameters);std::set<juce::String> seen;
  for(const auto& item:*patches){
   require(closed(item,{"stage_id","parameter_id","unit","value"})&&finiteNumber(item["value"]),"Invalid assistant parameter patch.");
-  const auto key=item["parameter_id"].toString();require(seen.insert(key).second,"Duplicate assistant parameter patch.");
+  const auto key=item["parameter_id"].toString();
+  if(context.evaluation.enabled())require(key==(context.evaluation.document["lifecycle_request_id"].toString()=="r_lifecycle_compression_apply_undo"?"thresholdDb":"outputDb"),"Evaluation patch changed a non-authorized control.");
+  require(seen.insert(key).second,"Duplicate assistant parameter patch.");
   bool permitted=false;
   if(auto* descriptors=context.descriptors.getArray())for(const auto& descriptor:*descriptors){
    if(descriptor["stage_id"]==item["stage_id"]&&descriptor["parameter_id"]==item["parameter_id"]&&descriptor["unit"]==item["unit"]&&double(item["value"])>=double(descriptor["min"])&&double(item["value"])<=double(descriptor["max"]))permitted=true;
@@ -161,13 +230,42 @@ struct Ready {
  tonescope::Parameters parameters;
  std::shared_ptr<const tonescope::AudioData> audio;
 };
-inline Ready validateReady(const Context& context,const juce::var& envelope,const juce::File& workDirectory){
- require(closed(envelope,{"schema_version","request_id","status","proposal","preview","reason","usage","trace_id","evidence_refs"}),"Invalid assistant response fields.");
+inline void validateEnvelope(const Context& context,const juce::var& envelope){
+ const bool live=context.evaluation.enabled();
+ require(live?closed(envelope,{"schema_version","request_id","status","proposal","preview","reason","usage","trace_id","evidence_refs","authorization","trace","snapshots"}):closed(envelope,{"schema_version","request_id","status","proposal","preview","reason","usage","trace_id","evidence_refs"}),"Invalid assistant response fields.");
  require(envelope["schema_version"].isInt()&&int(envelope["schema_version"])==1&&envelope["request_id"].toString()==context.requestId,"Assistant response identity differs.");
  auto usage=envelope["usage"];
  require(closed(usage,{"tool_calls","candidate_frames","input_tokens","output_tokens","cost_usd","latency_ms"}),"Invalid assistant usage report.");
  for(auto* key:{"tool_calls","candidate_frames","input_tokens","output_tokens","latency_ms"})require(integer(usage[key]),"Invalid assistant usage counter.");
- require(double(usage["tool_calls"])<=8&&double(usage["candidate_frames"])<=context.sampleRate*30&&double(usage["input_tokens"])<=12000&&double(usage["output_tokens"])<=4000&&double(usage["latency_ms"])<=60000&&finiteNumber(usage["cost_usd"])&&double(usage["cost_usd"])==0,"Assistant exceeded the offline native budget.");
+ require(double(usage["tool_calls"])<=8&&double(usage["candidate_frames"])<=context.sampleRate*30&&double(usage["input_tokens"])<=12000&&double(usage["output_tokens"])<=4000&&double(usage["latency_ms"])<=60000&&finiteNumber(usage["cost_usd"])&&double(usage["cost_usd"])>=0,"Assistant exceeded the native budget.");
+
+ if(!live){require(double(usage["cost_usd"])==0,"Assistant exceeded the offline native budget.");return;}
+ const auto a=envelope["authorization"],p=context.evaluation.policy(),trace=envelope["trace"];
+ require(finiteNumber(p["input_usd_per_million"])&&double(p["input_usd_per_million"])>=0&&finiteNumber(p["output_usd_per_million"])&&double(p["output_usd_per_million"])>=0,"Invalid evaluation rate ceilings.");
+ const auto reserved=(12000*double(p["input_usd_per_million"])+4000*double(p["output_usd_per_million"]))/1e6;
+ require(std::isfinite(reserved)&&reserved<=double(p["budget_usd"]),"Evaluation reservation exceeds consent.");
+ require(closed(a,{"schema_version","experiment_id","budget_id","consent_sha256","protocol_sha256","task_sha256","schedule_sha256","provenance","accounting_known","reserved_usd"})&&int(a["schema_version"])==1&&a["accounting_known"].isBool(),"Invalid evaluation authorization.");
+ for(auto* key:{"experiment_id","budget_id","protocol_sha256","task_sha256","schedule_sha256"})require(a[key]==p[key],"Evaluation authorization identity differs.");
+ require(a["consent_sha256"]==context.evaluation.document["consent_sha256"]&&a["provenance"]==context.evaluation.document["mode"]&&finiteNumber(a["reserved_usd"])&&std::abs(double(a["reserved_usd"])-reserved)<=1e-12&&double(usage["cost_usd"])<=reserved,"Evaluation cost or consent differs.");
+ require(closed(trace,{"schema_version","trace_id","attempt_id","request_id","session_id","experiment_id","consent_sha256","provenance","events"})&&int(trace["schema_version"])==1&&trace["trace_id"]==envelope["trace_id"]&&trace["attempt_id"].toString()==context.requestId&&trace["request_id"].toString()==context.requestId&&trace["session_id"].toString()==context.sessionId&&trace["experiment_id"]==p["experiment_id"]&&trace["consent_sha256"]==a["consent_sha256"]&&trace["provenance"]==a["provenance"],"Evaluation trace binding differs.");
+ auto* events=trace["events"].getArray();require(events&&events->size()>0&&events->size()<=64,"Invalid evaluation trace size.");int sequence=0;
+ for(const auto& event:*events){
+  require(event.isObject()&&integer(event["sequence"])&&int(event["sequence"])==++sequence,"Evaluation trace sequence differs.");
+  const auto category=event["category"].toString();require(juce::StringArray{"admission","reservation","generation_start","generation_end","snapshot","measurements","render","compare","verified_preview","terminal"}.contains(category),"Invalid evaluation event category.");
+  for(const auto& field:event.getDynamicObject()->getProperties())require(juce::StringArray{"sequence","category","session_revision","source_sha256","base_graph_sha256","selection_samples","preview_id","audio_sha256","provider_response_id"}.contains(field.name.toString()),"Unapproved evaluation event field.");
+  if(event.hasProperty("session_revision"))require(integer(event["session_revision"])&&juce::int64(event["session_revision"])==(juce::int64)context.revision,"Evaluation event revision differs.");
+  if(event.hasProperty("source_sha256"))require(event["source_sha256"].toString()==context.sourceHash,"Evaluation event source differs.");
+  if(event.hasProperty("base_graph_sha256"))require(event["base_graph_sha256"].toString()==context.graphHash,"Evaluation event graph differs.");
+  if(event.hasProperty("selection_samples"))require(equivalentJson(event["selection_samples"],context.selection()),"Evaluation event selection differs.");
+  for(auto* key:{"preview_id","provider_response_id"})if(event.hasProperty(key))require(event[key].isString()&&event[key].toString().isNotEmpty()&&event[key].toString().length()<=120&&event[key].toString().containsOnly("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"),"Invalid evaluation event identity.");
+  if(event.hasProperty("audio_sha256"))require(digestText(event["audio_sha256"].toString()),"Invalid evaluation audio digest.");
+ }
+ auto* snapshots=envelope["snapshots"].getArray();require(snapshots&&snapshots->size()<=8,"Invalid evaluation snapshots.");
+ for(const auto& snapshot:*snapshots)require(equivalentJson(snapshot,juce::JSON::parse(juce::JSON::toString(context.snapshot()))),"Evaluation snapshot binding differs.");
+}
+inline Ready validateReady(const Context& context,const juce::var& envelope,const juce::File& workDirectory){
+ validateEnvelope(context,envelope);
+ auto usage=envelope["usage"];
  require(uuid(envelope["trace_id"].toString()),"Invalid assistant trace identity.");
  require(envelope["status"].toString()=="ready"&&envelope["reason"].isVoid(),"Assistant did not return a ready proposal.");
  const auto p=envelope["proposal"],preview=envelope["preview"];
@@ -210,6 +308,51 @@ public:
  size_t size()const{return ids.size();}
  void clear(){ids.clear();overflow=false;}
 };
+inline juce::File evaluationArtifact(const Context& context,const char* suffix){return juce::File(context.evaluation.document["state_directory"].toString()).getChildFile("desktop-traces").getChildFile(context.sessionId+"-"+context.requestId+suffix);}
+inline void archiveEvaluationAudio(const Context& context,const juce::File& source,const char* suffix){
+ if(!context.evaluation.enabled())return;auto target=evaluationArtifact(context,suffix);
+ require(!target.existsAsFile()&&source.copyFileTo(target),"Cannot retain private evaluation audio.");protectPrivate(target);require(fileHash(source)==fileHash(target),"Private evaluation audio copy differs.");
+}
+// Private evaluation evidence is recorded on the message thread, never in audio.
+// Service events retain their sequence. Native events continue the same sequence.
+class LifecycleTrace {
+ Context context;juce::var data;juce::Array<juce::var> nativeEvents;juce::File destination;bool writable=true;
+ void save(){
+  juce::Array<juce::var> events;
+  if(auto* upstream=data["service_trace"]["events"].getArray())events.addArray(*upstream);
+  for(auto event:nativeEvents){event.getDynamicObject()->setProperty("sequence",events.size()+1);events.add(event);}
+  data.getDynamicObject()->setProperty("events",events);atomicJson(destination,data);
+ }
+public:
+ explicit LifecycleTrace(const Context& c):context(c){
+  require(c.evaluation.enabled(),"Evaluation trace requires explicit consent.");
+  auto directory=juce::File(c.evaluation.document["state_directory"].toString()).getChildFile("desktop-traces");
+  require(directory.createDirectory(),"Cannot create private evaluation evidence.");protectPrivate(directory);
+  destination=directory.getChildFile(c.sessionId+"-"+c.requestId+".json");
+  require(!destination.existsAsFile(),"Evaluation attempt evidence already exists.");
+  data=object({{"schema_version",1},{"provenance",c.evaluation.document["mode"]},{"experiment_id",c.evaluation.policy()["experiment_id"]},{"budget_id",c.evaluation.policy()["budget_id"]},{"attempt_id",c.requestId},{"request_id",c.requestId},{"session_id",c.sessionId},{"consent_sha256",c.evaluation.document["consent_sha256"]},{"snapshot",c.snapshot()},{"parameters_before",tonescope::session::parametersToVar(c.parameters)}});
+  save();
+ }
+ const juce::File& file()const{return destination;}
+ bool healthy()const{return writable;}
+ void ingest(const juce::var& envelope){
+  validateEnvelope(context,envelope);
+  data.getDynamicObject()->setProperty("service_trace",envelope["trace"]);
+  data.getDynamicObject()->setProperty("authorization",envelope["authorization"]);
+  data.getDynamicObject()->setProperty("usage",envelope["usage"]);
+  data.getDynamicObject()->setProperty("terminal_status",envelope["status"]);
+  auto baseline=evaluationArtifact(context,"-baseline.wav"),candidate=evaluationArtifact(context,"-candidate.wav");
+  if(baseline.existsAsFile())data.getDynamicObject()->setProperty("baseline_audio",object({{"file",baseline.getFileName()},{"sha256",fileHash(baseline)}}));
+  if(candidate.existsAsFile())data.getDynamicObject()->setProperty("candidate_audio",object({{"file",candidate.getFileName()},{"sha256",fileHash(candidate)}}));
+  // Exclude all model prose and local paths.
+  if(opaqueId(envelope["preview"]["preview_id"].toString())&&digestText(envelope["preview"]["audio_sha256"].toString()))data.getDynamicObject()->setProperty("preview_binding",object({{"preview_id",envelope["preview"]["preview_id"]},{"audio_sha256",envelope["preview"]["audio_sha256"]}}));
+  save();
+ }
+ bool append(const juce::String& category,const tonescope::Parameters& parameters,uint64_t revision,bool simulated=false)noexcept{
+  if(!writable)return false;try{require(nativeEvents.size()<64,"Evaluation native trace limit exceeded.");
+  nativeEvents.add(object({{"category",category},{"session_revision",(juce::int64)revision},{"source_sha256",context.sourceHash},{"base_graph_sha256",context.graphHash},{"current_graph_sha256",tonescope::session::hashParameters(parameters)},{"selection_samples",context.selection()},{"preview_binding",data["preview_binding"]},{"parameters",tonescope::session::parametersToVar(parameters)},{"simulated",simulated}}));save();return true;}catch(...){writable=false;return false;}
+ }
+};
 class Bridge final : public std::enable_shared_from_this<Bridge> {
  struct Job final:juce::ThreadPoolJob {std::function<void()> fn;explicit Job(std::function<void()> f):juce::ThreadPoolJob("Assistant local broker"),fn(std::move(f)){}JobStatus runJob()override{fn();return jobHasFinished;}};
  juce::ThreadPool work{1},control{1};
@@ -220,6 +363,7 @@ class Bridge final : public std::enable_shared_from_this<Bridge> {
  std::atomic<bool> stopping{false};
  std::atomic<int> port{0};
  juce::String token;
+ Evaluation evaluation=startupEvaluation;
  juce::File node,service,entry,cli,privateDirectory,environmentFile,manifestFile,historyDirectory,readyFile;
  juce::String session=capability().substring(0,32);
  static juce::File findService(){
@@ -243,12 +387,13 @@ class Bridge final : public std::enable_shared_from_this<Bridge> {
   require(!stopping,"Assistant is stopping.");
   readyFile.deleteFile();readyFile.getSiblingFile(readyFile.getFileName()+".tmp").deleteFile();
   juce::StringArray arguments{node.getFullPathName(),"--env-file="+environmentFile.getFullPathName(),"--experimental-strip-types",entry.getFullPathName(),"--native-env-file",environmentFile.getFullPathName(),"--native-ready-file",readyFile.getFullPathName()};
+  if(evaluation.enabled())arguments.addArray({"--native-evaluation-config",evaluation.file.getFullPathName()});
   {std::scoped_lock lock(childMutex);require(child.start(arguments,0),"Cannot start the optional local assistant.");}
   const auto deadline=juce::Time::getMillisecondCounterHiRes()+8000;
   while(!stopping&&juce::Time::getMillisecondCounterHiRes()<deadline){
    if(readyFile.existsAsFile()){
     require(readyFile.getSize()<=4096,"Invalid local assistant handshake.");auto ready=juce::JSON::parse(readyFile);auto address=ready["address"];
-    require(ready["schema_version"].isInt()&&int(ready["schema_version"])==1&&ready["provider"].toString()=="rules"&&ready["live_enabled"].isBool()&&!bool(ready["live_enabled"])&&address["address"].toString()=="127.0.0.1"&&integer(address["port"])&&int(address["port"])>=1&&int(address["port"])<=65535,"Local assistant handshake was rejected.");port=int(address["port"]);return;
+    require(ready["schema_version"].isInt()&&int(ready["schema_version"])==1&&ready["provider"].toString()==(evaluation.enabled()?"gateway":"rules")&&ready["live_enabled"].isBool()&&bool(ready["live_enabled"])==evaluation.enabled()&&address["address"].toString()=="127.0.0.1"&&integer(address["port"])&&int(address["port"])>=1&&int(address["port"])<=65535,"Local assistant handshake was rejected.");if(evaluation.enabled())require(ready["consent_sha256"]==evaluation.document["consent_sha256"]&&ready["experiment_id"]==evaluation.policy()["experiment_id"]&&ready["budget_id"]==evaluation.policy()["budget_id"]&&ready["provenance"]==evaluation.document["mode"],"Evaluation handshake identity differs.");port=int(address["port"]);return;
    }
    {std::scoped_lock lock(childMutex);if(!child.isRunning())break;}
    juce::Thread::sleep(10);
@@ -260,6 +405,8 @@ public:
  using Completion=std::function<void(juce::var,juce::String)>;
  const juce::File& directory()const{return privateDirectory;}
  juce::File previewDirectory()const{return privateDirectory.getChildFile("previews");}
+ const Evaluation& evaluationConfig()const{return evaluation;}
+ juce::String nextRequestId(const juce::String& prompt)const{return evaluation.enabled()?evaluation.requestId(prompt):juce::Uuid().toDashedString();}
  juce::String sessionId()const{std::scoped_lock lock(sessionMutex);return session;}
  void post(std::function<void()> fn){work.addJob(new Job(std::move(fn)),true);}
  juce::String prepare(){
@@ -293,6 +440,7 @@ public:
    try{
     std::unique_lock serverLock(self->serverMutex);
     require(!self->stopping&&!self->canceled(context.requestId)&&context.sessionId==self->sessionId()&&prompt.getNumBytesAsUTF8()<=7000,"Assistant request is canceled, excessive or belongs to an expired session.");
+    if(self->evaluation.enabled())require(context.requestId==self->evaluation.requestId(prompt)&&canonicalJson(context.evaluation.document)==canonicalJson(self->evaluation.document),"Evaluation request identity differs.");
     require(context.first>=0&&context.last>context.first&&context.last+context.alignment<=int64_t(context.sampleRate*30)&&context.alignment==((context.parameters.drive&&context.parameters.oversampling>1)?32:0),"Assistant selection exceeds its processing budget or alignment differs.");
     require(fileHash(context.sourceFile)==context.sourceHash,"Source changed before the assistant request.");
     auto asset=object({{"snapshot",context.snapshot()},{"source_path",context.sourceFile.getFullPathName()},{"parameters",tonescope::session::parametersToVar(context.parameters)}});
@@ -303,7 +451,7 @@ public:
      require(context.rawWet&&context.first>=context.cacheOffset&&context.last-context.cacheOffset+context.alignment<=context.rawWet->frames(),"Assistant baseline is outside its exact native cache.");
      tonescope::AudioData baseline;baseline.sampleRate=context.sampleRate;baseline.samples.resize(context.rawWet->samples.size());
      for(size_t c=0;c<baseline.samples.size();++c){require(!self->stopping,"Assistant is stopping.");const auto& input=context.rawWet->samples[c];baseline.samples[c].assign(input.begin()+context.first-context.cacheOffset+context.alignment,input.begin()+context.last-context.cacheOffset+context.alignment);}
-     auto baselineFile=self->privateDirectory.getChildFile("baseline-current.wav");tonescope::writeWav(baselineFile.getFullPathName().toStdString(),baseline);protectPrivate(baselineFile);
+     auto baselineFile=self->privateDirectory.getChildFile("baseline-current.wav");tonescope::writeWav(baselineFile.getFullPathName().toStdString(),baseline);protectPrivate(baselineFile);archiveEvaluationAudio(context,baselineFile,"-baseline.wav");
      auto manifest=object({{"schema_version",1},{"frames",(juce::int64)baseline.frames()},{"channels",(int)baseline.samples.size()},{"sample_rate_hz",baseline.sampleRate},{"source_sha256",context.sourceHash},{"artifact_sha256",fileHash(baselineFile)},{"graph_sha256",context.graphHash},{"selection_samples",context.selection()},{"processed_frames",(juce::int64)(context.last+context.alignment)},{"alignment_samples",context.alignment}});
      atomicJson(baselineFile.getSiblingFile(baselineFile.getFileName()+".json"),manifest);asset.getDynamicObject()->setProperty("baseline_path",baselineFile.getFullPathName());
     }
