@@ -135,7 +135,8 @@
       "generations": 7,
       "reserved_usd": 0.0448,
       "scored_requests": 0,
-      "blocker": "AI Gateway credit balance is $0; no further paid attempt is possible until it is funded and a new attempt is separately approved",
+      "blocker": "a formal setup attempt needs a fresh frozen packet, independent review and user approval of that packet (the provider adapter changed after the last freeze). The earlier $0 credit claim was wrong: an authenticated credits read on 2026-11-21 showed $9.996",
+      "off_protocol_probe": "2026-11-21, user-approved, artifacts/live-model/probe_20261121: setup request r_setup_3 replayed once on branch commit 3f71861 with its own one-request ledger (cap $0.0112). Result noop in 1 generation, 863 input and 26 output tokens, $0.000387 settled, accounting known; credit balance fell by the same amount. Not protocol evidence, not a passed setup gate, outside the $2.02 ledger. The second-reply path and the incremental token bound were not exercised",
       "last_failure": "setup reply 2 failed as provider_output_json_invalid_accounting_reserved with finish reason stop; cause unknown because no content-free shape facts were retained",
       "protocol_deviation": "the ledger was manually transferred between consent versions (budget-transfer.json); neither delivery/live-model-protocol.md nor the code defines such a transfer",
       "state_records": [
