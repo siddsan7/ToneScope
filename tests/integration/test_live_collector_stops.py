@@ -18,7 +18,7 @@ from live_evidence import write_json
 
 
 class CollectorStopTests(unittest.TestCase):
-    def exercise(self, status, reason, critical=False, diagnostic=None, accounting_known=None):
+    def exercise(self, status, reason, critical=False, diagnostic=None, accounting_known=None, stall=None):
         with tempfile.TemporaryDirectory(dir=ROOT / "artifacts") as temporary:
             folder = Path(temporary)
             task = {"key": "fixture", "input": {"source": "source.wav", "baseline": "baseline.wav",
@@ -39,6 +39,8 @@ class CollectorStopTests(unittest.TestCase):
             def dispatch(argv, **options):
                 request = json.loads(options["input"])["request"]
                 calls.append(request["request_id"])
+                if stall is not None:
+                    return subprocess.CompletedProcess(argv, 3, stall(request), "")
                 result = {"status": status, "reason": reason, "request_id": request["request_id"], "trace_id": "trace",
                           "authorization": {} if accounting_known is None else {"accounting_known": accounting_known}, "trace": {}, "snapshots": [], "usage": {}, "evidence_refs": [],
                           "proposal": {} if status == "ready" else None, "preview": {} if status == "ready" else None}
@@ -138,6 +140,43 @@ class CollectorStopTests(unittest.TestCase):
                 calls, records = self.exercise("failed", reason, accounting_known=True)
                 self.assertEqual(calls, ["request_0"])
                 self.assertEqual(records[0]["protocol_halt_reason"], reason)
+
+    def stall_output(self, request, envelope_line=False, **changes):
+        diagnostic = {"schema_version": 1, "request_id": request["request_id"], "elapsed_ms": 68004,
+                      "ledger_step": "lock_owner_sync", "output_written": envelope_line,
+                      "active_resources": {"FSReqPromise": 1, "Timeout": 2}}
+        diagnostic.update(changes)
+        line = json.dumps({"schema_version": 1, "request_sha256": request_digest(request),
+                           "collector_stall_diagnostic": diagnostic})
+        return ('{"result": "earlier line"}\n' if envelope_line else "") + line + "\n"
+
+    def test_stall_diagnostic_is_retained_and_the_attempt_still_halts(self):
+        for envelope_line in (False, True):
+            with self.subTest(envelope_line=envelope_line):
+                calls, records = self.exercise("noop", None, stall=lambda request: self.stall_output(request, envelope_line))
+                self.assertEqual(calls, ["request_0"])
+                self.assertEqual(records[0]["reason"], "invalid_or_missing_attempt_evidence")
+                self.assertTrue(records[0]["grade"]["critical"])
+                self.assertEqual(records[0]["collector_stall_diagnostic"]["ledger_step"], "lock_owner_sync")
+                self.assertEqual(records[0]["collector_stall_diagnostic"]["active_resources"], {"FSReqPromise": 1, "Timeout": 2})
+                self.assertNotIn("envelope", records[0])
+
+    def test_stall_diagnostic_with_content_or_wrong_binding_is_never_retained(self):
+        cases = {
+            "extra_field": lambda r: self.stall_output(r, text="PRIVATE_DIAGNOSTIC_CANARY"),
+            "free_step": lambda r: self.stall_output(r, ledger_step="PRIVATE canary"),
+            "free_resource": lambda r: self.stall_output(r, active_resources={"PRIVATE canary": 1}),
+            "other_request": lambda r: self.stall_output({**r, "request_id": "request_9"}),
+            "not_json": lambda r: "PRIVATE_DIAGNOSTIC_CANARY\n",
+            "empty": lambda r: "",
+        }
+        for name, stall in cases.items():
+            with self.subTest(name=name):
+                calls, records = self.exercise("noop", None, stall=stall)
+                self.assertEqual(calls, ["request_0"])
+                self.assertNotIn("collector_stall_diagnostic", records[0])
+                self.assertNotIn("PRIVATE", json.dumps(records))
+                self.assertEqual(records[0]["reason"], "invalid_or_missing_attempt_evidence")
 
     def diagnostic(self, **changes):
         value = {"schema_version": 1, "category": "json_invalid", "generation": 2, "finish_reason": "stop",

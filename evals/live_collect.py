@@ -78,6 +78,33 @@ def retained_output_diagnostic(diagnostic, request, result):
     return copy.deepcopy(diagnostic)
 
 
+def retained_stall_diagnostic(stdout, request):
+    """Closed, content-free facts from a collector process that outlived its wall limit.
+
+    Only the final stdout line is read. Anything outside the closed shape, or
+    bound to another request, is dropped; the attempt fails either way.
+    """
+    try:
+        output=strict_json(stdout.strip().splitlines()[-1])
+        diagnostic=output['collector_stall_diagnostic']
+        if (set(output) != {'schema_version','request_sha256','collector_stall_diagnostic'} or output['schema_version'] != 1
+                or output['request_sha256'] != request_digest(request)
+                or set(diagnostic) != {'schema_version','request_id','elapsed_ms','ledger_step','output_written','active_resources'}
+                or diagnostic['schema_version'] != 1 or diagnostic['request_id'] != request['request_id']
+                or type(diagnostic['elapsed_ms']) is not int or not 0 <= diagnostic['elapsed_ms'] <= 600000
+                or not isinstance(diagnostic['ledger_step'],str) or not re.fullmatch('[a-z_]{1,40}',diagnostic['ledger_step'])
+                or type(diagnostic['output_written']) is not bool):
+            return None
+        resources=diagnostic['active_resources']
+        if (not isinstance(resources,dict) or len(resources) > 32
+                or any(not isinstance(k,str) or not re.fullmatch('[A-Za-z]{1,40}',k) or type(v) is not int or not 0 <= v <= 10000
+                       for k,v in resources.items())):
+            return None
+        return copy.deepcopy(diagnostic)
+    except (ValueError,KeyError,TypeError,IndexError,AttributeError):
+        return None
+
+
 def consent_preflight(root, manifest, args):
     if not args.run_consented_experiment or not args.consent or not args.preflight:
         raise ValueError('explicit_live_opt_in_consent_and_P4_preflight_required')
@@ -263,6 +290,10 @@ def collect(args):
                 argv=[node,'--experimental-strip-types',str(args.runtime/'agent/lib/live-collector.ts'),'--run-consented-experiment',
                       '--consent-file',str(args.consent.resolve()),'--manifest-file',str(folder/'private-host.json')]
                 child=subprocess.run(argv,input=json.dumps(payload),text=True,capture_output=True,timeout=75,env=safe_environment(True))
+                if child.returncode == 3 and len(child.stdout) <= 2*1024*1024:
+                    # The collector's own stall watchdog fired. The attempt still fails below.
+                    stall=retained_stall_diagnostic(child.stdout,request)
+                    if stall is not None: record['collector_stall_diagnostic']=stall
                 if child.returncode or len(child.stdout)>2*1024*1024: raise ValueError('production_collector_failed')
                 output=strict_json(child.stdout)
                 if output['request_sha256'] != request_digest(request): raise ValueError('request_digest')
