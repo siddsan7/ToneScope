@@ -146,32 +146,35 @@ test('Gateway still rejects malformed selection bounds returned under the provid
  }
 });
 
-// Measures the reservation headroom of a realistic request. The byte-count bound
-// (UTF-8 bytes >= tokens) re-reserves the system prompt, output schema and first
-// message on every call, so the frozen 12,000-token request limit admits far fewer
-// generations than the 8 tool calls. Change these counts only with a reviewed bound.
-test('byte-bound reservation admits only a few generations for realistic requests',async()=>{
+// Measures the reservation headroom of a realistic request. The first call is
+// reserved at its UTF-8 byte count (bytes >= tokens); later calls charge the
+// unchanged prefix at the provider-reported count and only appended messages at
+// their byte count. The mock reports one token per three prompt bytes.
+// Change these counts only with a reviewed bound.
+test('incremental reservation admits more generations for realistic requests',async()=>{
  const prompt='Reduce the hard-soft RMS contrast by 3 dB while preserving the soft passage level and keeping sample peak below -1 dBFS.';
  const admissions=[{request_id:'headroom_1',prompt_sha256:promptDigest(prompt),role:'scored' as const}];
  const p={...livePolicy(),verified_model:'openai/gpt-4.1-mini',provider_slug:'azure',admissions_sha256:admissionsDigest(admissions)};
  const stages=['input','compressor','compressor','compressor','compressor','compressor','compressor','output'];
  const names=['inputDb','thresholdDb','ratio','attackMs','releaseMs','kneeDb','makeupDb','outputDb'];
  const units=['dB','dB','ratio','ms','ms','dB','dB','dB'] as const;
- for(const [count,expected] of [[8,4],[24,3]] as const){
+ // The last case reports 2,000 more input tokens than the prefix-plus-appended-bytes bound allows on the
+ // second call (still under the old whole-prompt byte bound) and must fail closed.
+ for(const [count,expected,reason,excess] of [[8,5,'token_budget_reservation',0],[24,4,'token_budget_reservation',0],[8,2,'provider_usage_exceeded_reservation',2000]] as const){
   const parameters=Array.from({length:count},(_,i)=>({stage_id:stages[i%8],parameter_id:i<8?names[i]:'band'+i+'Db',unit:units[i%8],value:0,min:-24,max:24}));
   let renders=0;
   const native:NativeAdapter={async snapshot(){return {session_id:'session_1',session_revision:1,source_sha256:'a'.repeat(64),base_graph_sha256:'b'.repeat(64),source_handle:'asset_compression_reduce_three',selection_samples:[0,192000],sample_rate:48000,parameters,passages:{origin:'manual',soft:[24000,72000],hard:[120000,168000]},processing:{compressor:true,multiband:false,equalizer:false,drive:false}};},
    async measurements(){return ['rms_dbfs','peak_dbfs','crest_db','soft_rms_dbfs','hard_rms_dbfs','contrast_db'].map(measurement_id=>({measurement_id,value:-23.456789,unit:'dBFS' as const}));},
    async render(){renders++;return {preview_id:'preview_'+renders,audio_sha256:'c'.repeat(64),session_revision:1,measurements:[{measurement_id:'preview_rms_dbfs',value:-18.123456,unit:'dBFS'}]};},
    async compare(){return ['rms_delta_db','peak_delta_db','contrast_delta_db'].map(measurement_id=>({measurement_id,value:-1.234567,unit:'dB' as const}));}};
-  const model=new MockLanguageModelV4({modelId:p.verified_model,doGenerate:async()=>({...response(model.doGenerateCalls.length===1?{kind:'render_candidate',parameter_patch:[{stage_id:'compressor',parameter_id:'thresholdDb',unit:'dB',value:-6}]}:{kind:'compare_candidate',preview_id:'preview_1'}),
-   usage:{inputTokens:{total:1300,noCache:1300,cacheRead:0,cacheWrite:0},outputTokens:{total:40,text:40,reasoning:0}},response:{modelId:p.verified_model}})});
+  const model=new MockLanguageModelV4({modelId:p.verified_model,doGenerate:async options=>{const tokens=Math.ceil(Buffer.byteLength(JSON.stringify([options.prompt,options.responseFormat]))/3)+(model.doGenerateCalls.length===2?excess:0);return {...response(model.doGenerateCalls.length===1?{kind:'render_candidate',parameter_patch:[{stage_id:'compressor',parameter_id:'thresholdDb',unit:'dB',value:-6}]}:{kind:'compare_candidate',preview_id:'preview_1'}),
+   usage:{inputTokens:{total:tokens,noCache:tokens,cacheRead:0,cacheWrite:0},outputTokens:{total:40,text:40,reasoning:0}},response:{modelId:p.verified_model}};}});
   const directory=await mkdtemp(join(process.cwd(),'.test-runtime-gateway-headroom-'));
   try{
    const result=await new AssistantService(native,new StateStore(directory),new GatewayProvider(p,'mock',{model,async verifyMetadata(){}}),p,undefined,undefined,new AdmissionGuard(admissions)).run({schema_version:1,request_id:'headroom_1',session_id:'session_1',prompt});
-   assert.equal(result.reason,'token_budget_reservation',JSON.stringify(result.usage));
+   assert.equal(result.reason,reason,JSON.stringify([result.usage,model.doGenerateCalls.length]));
    assert.equal(model.doGenerateCalls.length,expected,`${count} controls`);
-   assert.ok(result.usage.input_tokens<=12000&&result.usage.tool_calls<8);
+   assert.ok(result.usage.input_tokens<=12000,JSON.stringify(result.usage));
   }finally{await rm(directory,{recursive:true,force:true});}
  }
 });
