@@ -108,6 +108,16 @@ test('Gateway sends Azure a structured response schema with a single items schem
   const action = format.schema.properties?.action;
   assert.ok(action && typeof action === 'object');
   const branches: unknown[] = action.anyOf ?? action.oneOf ?? [];
+  // Strict structured output is generated in schema order. A branch that opened with free text committed the live
+  // model to noop/abstain before it had chosen an action, so every branch must start with its discriminator.
+  assert.equal(branches.length, 4);
+  for (const branch of branches) {
+   assert.ok(branch && typeof branch === 'object' && 'properties' in branch && branch.properties && typeof branch.properties === 'object');
+   assert.equal(Object.keys(branch.properties)[0], 'kind', JSON.stringify(Object.keys(branch.properties)));
+  }
+  const system = model.doGenerateCalls[0].prompt.find(message => message.role === 'system');
+  assert.ok(system && typeof system.content === 'string');
+  for (const kind of ['render_candidate', 'propose_change', 'noop', 'abstain']) assert.match(system.content, new RegExp(kind + ' (tries|is the final answer)'));
   const proposed = branches.find(
    (branch): branch is {properties:{proposal:{properties?:Record<string,unknown>}}} =>
     Boolean(branch && typeof branch === 'object' && 'properties' in branch &&
@@ -160,7 +170,7 @@ test('incremental reservation admits more generations for realistic requests',as
  const units=['dB','dB','ratio','ms','ms','dB','dB','dB'] as const;
  // The last case reports 2,000 more input tokens than the prefix-plus-appended-bytes bound allows on the
  // second call (still under the old whole-prompt byte bound) and must fail closed.
- for(const [count,expected,reason,excess] of [[8,5,'token_budget_reservation',0],[24,4,'token_budget_reservation',0],[8,2,'provider_usage_exceeded_reservation',2000]] as const){
+ for(const [count,expected,reason,excess] of [[8,4,'token_budget_reservation',0],[24,3,'token_budget_reservation',0],[8,2,'provider_usage_exceeded_reservation',2000]] as const){
   const parameters=Array.from({length:count},(_,i)=>({stage_id:stages[i%8],parameter_id:i<8?names[i]:'band'+i+'Db',unit:units[i%8],value:0,min:-24,max:24}));
   let renders=0;
   const native:NativeAdapter={async snapshot(){return {session_id:'session_1',session_revision:1,source_sha256:'a'.repeat(64),base_graph_sha256:'b'.repeat(64),source_handle:'asset_compression_reduce_three',selection_samples:[0,192000],sample_rate:48000,parameters,passages:{origin:'manual',soft:[24000,72000],hard:[120000,168000]},processing:{compressor:true,multiband:false,equalizer:false,drive:false}};},
