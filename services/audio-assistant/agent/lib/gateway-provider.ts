@@ -117,6 +117,11 @@ export function providerToolSpecsFor(schema:ReturnType<typeof providerSchemaFor>
  }
  return specs;
 }
+/** Bytes of the tool definitions sent now that were not sent last time. Removed tools never offset added ones. */
+export function addedToolDefinitionBytes(previous:readonly string[],active:readonly string[],specs:Record<string,unknown>){
+ const added=active.filter(name=>!previous.includes(name));
+ return added.length?Buffer.byteLength(JSON.stringify(Object.fromEntries(added.map(name=>[name,specs[name]])))):0;
+}
 // `strict` travels in each tool definition. The Gateway endpoint metadata does not list parallel_tool_calls,
 // so this option may be ignored; more than one call in a reply still fails closed.
 const PROVIDER_OPTIONS={openai:{parallelToolCalls:false}};
@@ -199,7 +204,7 @@ export class GatewayProvider implements Provider {
    ||(name==='render_candidate'&&rendersLeft()>0)||(name==='propose_change'&&previews.length>0)
    ||(name==='compare_candidate'&&previews.length>0&&LIMITS.tool_calls-tools.usage.tool_calls>=2));
   const messages:ModelMessage[]=[{role:'user',content:JSON.stringify({request,snapshot,measurements,renders_left:rendersLeft()})}];
-  let prior:{input_tokens:number;message_bytes:number;tool_bytes:number}|undefined;
+  let prior:{input_tokens:number;message_bytes:number;tool_names:string[]}|undefined;
   for(let step=0;step<LIMITS.tool_calls;step++){
    tools.check();
    // First call: UTF-8 byte count plus framing is a conservative tokenizer-independent reservation for text-only calls.
@@ -212,7 +217,9 @@ export class GatewayProvider implements Provider {
    const toolBytes=Buffer.byteLength(JSON.stringify(Object.fromEntries(active.map(name=>[name,toolSpecs[name]]))));
    const messageBytes=Buffer.byteLength(JSON.stringify(messages));
    const byteBound=Buffer.byteLength(SYSTEM)+toolBytes+messageBytes+512;
-   const inputBound=prior?Math.min(byteBound,prior.input_tokens+messageBytes-prior.message_bytes+Math.max(0,toolBytes-prior.tool_bytes)+512):byteBound;
+   // The reported prefix still counts tools removed since then, so only additions are charged, each in full.
+   const addedToolBytes=prior?addedToolDefinitionBytes(prior.tool_names,active,toolSpecs):0;
+   const inputBound=prior?Math.min(byteBound,prior.input_tokens+messageBytes-prior.message_bytes+addedToolBytes+512):byteBound;
    const outputCap=Math.min(2048,LIMITS.output_tokens-tools.usage.output_tokens);
    if(outputCap<=0||tools.usage.input_tokens+inputBound>LIMITS.input_tokens)throw Error('token_budget_reservation');
    const reservedCost=(inputBound*p.input_usd_per_million+outputCap*p.output_usd_per_million)/1e6;
@@ -282,7 +289,7 @@ export class GatewayProvider implements Provider {
    if(input!>inputBound||output!>outputCap)throw Error('provider_usage_exceeded_reservation');
    if(result.response.modelId!==p.verified_model)throw Error('provider_model_mismatch');
    tools.accountingKnown=true;
-   prior={input_tokens:input!,message_bytes:messageBytes,tool_bytes:toolBytes};
+   prior={input_tokens:input!,message_bytes:messageBytes,tool_names:active};
    tools.check();const action=parsed.data!.action;
    if(action.kind==='noop'||action.kind==='abstain')return {status:action.kind,reason:action.reason};
    if(action.kind==='propose_change'){

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp,rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { MockLanguageModelV4 } from 'ai/test';
-import { GatewayProvider,adjustableControls,providerSchemaFor,schemaPropertyCount,PROVIDER_SCHEMA_MAX_PROPERTIES } from '../agent/lib/gateway-provider.ts';
+import { GatewayProvider,adjustableControls,addedToolDefinitionBytes,providerSchemaFor,schemaPropertyCount,PROVIDER_SCHEMA_MAX_PROPERTIES } from '../agent/lib/gateway-provider.ts';
 import { AssistantService } from '../agent/lib/service.ts';
 import { StateStore } from '../agent/lib/store.ts';
 import { endpointMetadataDigest } from '../agent/lib/gateway-metadata.ts';
@@ -215,4 +215,13 @@ test('after two renders no further render is offered, so a proposal always fits 
   const left=model.doGenerateCalls[2].prompt.filter(m=>m.role==='tool').map(m=>(m.content[0] as unknown as {output:{value:{renders_left:number}}}).output.value.renders_left);
   assert.deepEqual(left,[1,0]);
  }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+test('a generation that adds tools is charged their full bytes even when another tool is removed',()=>{
+ const specs={render_candidate:{a:'x'.repeat(50)},noop:{b:'y'.repeat(200)},propose_change:{c:'z'.repeat(80)},abstain:{d:1}};
+ const added=Buffer.byteLength(JSON.stringify({propose_change:specs.propose_change}));
+ // noop (larger) leaves while propose_change arrives: a net-change bound would charge nothing.
+ assert.equal(addedToolDefinitionBytes(['render_candidate','noop','abstain'],['render_candidate','propose_change','abstain'],specs),added);
+ assert.equal(addedToolDefinitionBytes(['render_candidate','abstain'],['render_candidate','abstain'],specs),0);
+ assert.equal(addedToolDefinitionBytes(['render_candidate','noop','abstain'],['abstain'],specs),0);
 });
