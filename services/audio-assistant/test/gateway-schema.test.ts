@@ -111,6 +111,37 @@ test('Gateway request body carries strict tools, one required call, and adjustab
  }finally{await rm(directory,{recursive:true,force:true});}
 });
 
+test('an Anthropic policy sends disableParallelToolUse, a required tool call, thinking disabled and the anthropic-only filter',async()=>{
+ const AM='anthropic/claude-haiku-5.5',AS='anthropic';
+ const fixture=endpointFixture(AM,AS);
+ const policy={...livePolicy(),verified_model:AM,provider_slug:AS,metadata_sha256:endpointMetadataDigest(fixture,AM,AS)};
+ const bodies:Json[]=[];
+ const fakeFetch=(async(input:string|URL|Request,init?:RequestInit)=>{
+  const url=String(input instanceof Request?input.url:input);
+  if(url==='https://ai-gateway.vercel.sh/v4/ai/config')return Response.json({models:[{id:AM,name:AM,pricing:{input:'0.000001',output:'0.000001'},specification:{specificationVersion:'v4',provider:AS,modelId:AM},modelType:'language'}]});
+  if(url===`https://ai-gateway.vercel.sh/v1/models/${AM}/endpoints`)return Response.json(fixture);
+  if(url==='https://ai-gateway.vercel.sh/v4/ai/language-model'){bodies.push(JSON.parse(String(init?.body)));return Response.json(generated({kind:'abstain',reason:'Not met.'}));}
+  throw Error('unexpected_url '+url);
+ }) as typeof fetch;
+ const directory=await mkdtemp(join(process.cwd(),'.test-runtime-gateway-anthropic-'));
+ try{
+  const result=await new AssistantService(adapterFor(mixed),new StateStore(directory),new GatewayProvider(policy,'mock-key',{fetch:fakeFetch}),policy,undefined,undefined,new AdmissionGuard(defaultAdmissions)).run(req);
+  assert.equal(result.status,'abstain',JSON.stringify(result));
+  assert.equal(bodies.length,1);
+  const options=bodies[0].providerOptions as Json;
+  assert.deepEqual(options.anthropic,{thinking:{type:'disabled'},disableParallelToolUse:true});
+  assert.equal(options.openai,undefined);
+  assert.deepEqual((options.gateway as Json).only,[AS]);
+  assert.deepEqual((options.gateway as Json).has,['tool-use']);
+  assert.equal((options.gateway as Json).disallowPromptTraining,true);
+  assert.deepEqual(bodies[0].toolChoice,{type:'required'});
+  // Only the explicit disable mentions thinking; no reasoning budget or effort is sent.
+  assert.equal(JSON.stringify(bodies[0]).split('thinking').length,2);
+  assert.equal(JSON.stringify(bodies[0]).includes('reasoning'),false);
+  for(const t of bodies[0].tools as Array<{strict:boolean}>)assert.equal(t.strict,true);
+ }finally{await rm(directory,{recursive:true,force:true});}
+});
+
 test('input reservation counts exactly the per-request tool definitions that are sent',async()=>{
  for(const [extra,expected] of [[0,'noop'],[1,'provider_usage_exceeded_reservation']] as const){
   const policy={...livePolicy(),verified_model:MODEL,provider_slug:SLUG};
