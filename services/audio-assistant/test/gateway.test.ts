@@ -15,7 +15,7 @@ const req={schema_version:1,request_id:'gateway_1',session_id:'session_1',prompt
 const proposal:Proposal={schema_version:1,request_id:'gateway_1',session_revision:1,source_sha256:'a'.repeat(64),base_graph_sha256:'b'.repeat(64),selection_samples:[0,48000],hypotheses:['A bounded gain change may improve measured level.'],evidence_refs:[{measurement_id:'rms_dbfs',value:-24,unit:'dBFS'}],parameter_patch:[{stage_id:'output',parameter_id:'outputDb',unit:'dB',value:6}],expected_tradeoffs:['Less peak headroom.'],limitations:['No listening or perceptual qualification.'],requires_user_acceptance:true};
 const adapter:NativeAdapter={async snapshot(){return {session_id:'session_1',session_revision:1,source_sha256:'a'.repeat(64),base_graph_sha256:'b'.repeat(64),source_handle:'opaque',selection_samples:[0,48000],sample_rate:48000,parameters:[{stage_id:'output',parameter_id:'outputDb',unit:'dB',value:0,min:-24,max:24}]};},async measurements(){return [{measurement_id:'rms_dbfs',value:-24,unit:'dBFS'}];},async render(){return {preview_id:'preview_1',audio_sha256:'c'.repeat(64),session_revision:1,measurements:[{measurement_id:'preview_rms_dbfs',value:-18,unit:'dBFS'}]};},async compare(){return [{measurement_id:'rms_delta_db',value:6,unit:'dB'}];}};
 // The provider answers with one tool call named by the action kind; its input is the rest of the action.
-const toolCall=(action:any)=>[{type:'tool-call' as const,toolCallId:'call_mock',toolName:action.kind,input:JSON.stringify(action.kind==='propose_change'?{preview_id:action.preview_id??'preview_1',proposal:(({parameter_patch,...rest})=>rest)(action.proposal)}:(({kind,...rest})=>rest)(action))}];
+const toolCall=(action:any)=>[{type:'tool-call' as const,toolCallId:'call_mock',toolName:action.kind,input:JSON.stringify(action.kind==='propose_change'?{preview_id:action.preview_id??'preview_1',proposal:(({parameter_patch,evidence_refs,...rest})=>({...rest,evidence_refs:evidence_refs.map((e:any)=>e.measurement_id)}))(action.proposal)}:(({kind,...rest})=>rest)(action))}];
 const response=(action:unknown)=>({content:action?toolCall(action):[],finishReason:{unified:'tool-calls' as const,raw:'tool_calls'},usage:{inputTokens:{total:100,noCache:100,cacheRead:0,cacheWrite:0},outputTokens:{total:50,text:50,reasoning:0}},providerMetadata:{gateway:{generationId:'gen_mock'}},response:{modelId:policy.verified_model},warnings:[]});
 
 test('Gateway classifies SDK output failures without retaining response text', async () => {
@@ -26,10 +26,10 @@ test('Gateway classifies SDK output failures without retaining response text', a
   {content:[], finish:'stop', reason:'provider_output_schema_invalid_accounting_reserved'},
   {content:[{type:'text' as const,text:JSON.stringify({action:{kind:'noop',reason:privateText}})}], finish:'stop', reason:'provider_output_schema_invalid_accounting_reserved'},
   {content:[], finish:'length', reason:'provider_output_truncated_accounting_reserved'},
-  {content:[call('noop','{"reason":"'+privateText)], finish:'length', reason:'provider_output_truncated_accounting_reserved'},
-  {content:[call('noop','{"reason":'+privateText)], finish:'tool-calls', reason:'provider_output_json_invalid_accounting_reserved'},
-  {content:[call('noop',JSON.stringify({reason:'',extra:privateText}))], finish:'tool-calls', reason:'provider_output_schema_invalid_accounting_reserved'},
-  {content:[call('noop',JSON.stringify({reason:privateText}),'call_a'),call('abstain',JSON.stringify({reason:privateText}),'call_b')], finish:'tool-calls', reason:'provider_output_schema_invalid_accounting_reserved'},
+  {content:[call('abstain','{"reason":"'+privateText)], finish:'length', reason:'provider_output_truncated_accounting_reserved'},
+  {content:[call('abstain','{"reason":'+privateText)], finish:'tool-calls', reason:'provider_output_json_invalid_accounting_reserved'},
+  {content:[call('abstain',JSON.stringify({reason:'',extra:privateText}))], finish:'tool-calls', reason:'provider_output_schema_invalid_accounting_reserved'},
+  {content:[call('abstain',JSON.stringify({reason:privateText}),'call_a'),call('abstain',JSON.stringify({reason:privateText}),'call_b')], finish:'tool-calls', reason:'provider_output_schema_invalid_accounting_reserved'},
   {content:[call('get_session_snapshot',JSON.stringify({[privateText]:1}))], finish:'tool-calls', reason:'provider_output_schema_invalid_accounting_reserved'},
  ] as const;
  // Content-free shape facts expected for each JSON/schema failure, in case order. A reply without a tool call keeps no text.
@@ -94,18 +94,21 @@ test('Gateway sends Azure one strict tool per action kind, requires one call, an
  const directory = await mkdtemp(join(process.cwd(), '.test-runtime-gateway-schema-'));
  try {
   const model = new MockLanguageModelV4({
-   modelId: policy.verified_model, doGenerate: response({kind:'noop',reason:'No change required.'})
+   modelId: policy.verified_model, doGenerate: [response({kind:'render_candidate',parameter_patch:proposal.parameter_patch}),response({kind:'abstain',reason:'Not met.'})]
   });
   const provider = new GatewayProvider(policy, 'mock', {model, async verifyMetadata(){}});
   const result = await new AssistantService(adapter, new StateStore(directory), provider, policy,
    undefined, undefined, new AdmissionGuard(defaultAdmissions)).run(req);
-  assert.equal(result.status, 'noop');
-  const options = model.doGenerateCalls[0];
+  assert.equal(result.status, 'abstain');
+  // Only tools that can still lead to a valid answer are offered: noop before any render, propose_change after one.
+  const names = (call: (typeof model.doGenerateCalls)[number]) => (call.tools ?? []).map(t => t.name);
+  assert.deepEqual(names(model.doGenerateCalls[0]), ['render_candidate','noop','abstain']);
+  assert.deepEqual(names(model.doGenerateCalls[1]), ['render_candidate','compare_candidate','propose_change','abstain']);
+  const options = model.doGenerateCalls[1];
   // Several complete actions in one JSON reply were observed under strict structured output; a tool call is one action.
   assert.equal(options.responseFormat?.type ?? 'text', 'text');
   assert.deepEqual(options.toolChoice, {type:'required'});
   const tools = (options.tools ?? []) as Array<{type:string;name:string;strict?:boolean;inputSchema:Record<string,any>}>;
-  assert.deepEqual(tools.map(t=>t.name).sort(), ['abstain','compare_candidate','noop','propose_change','render_candidate']);
   for (const t of tools) {
    assert.equal(t.type, 'function'); assert.equal(t.strict, true, t.name);
    assert.equal(t.inputSchema.additionalProperties, false, t.name);
