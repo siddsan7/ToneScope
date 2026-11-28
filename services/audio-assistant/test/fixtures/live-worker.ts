@@ -43,7 +43,11 @@ const transport:typeof fetch=async(input,init)=>{
  const first=JSON.parse(requestContent.find((p:any)=>p.type==='text').text);
  const snapshot=first.snapshot;
  const action=c.noop?{kind:'noop',reason:'Controlled transport result'}:calls===1?{kind:'render_candidate',parameter_patch:[{stage_id:'output',parameter_id:'outputDb',unit:'dB',value:3}]}:{kind:'propose_change',proposal:{schema_version:1,request_id:first.request.request_id,session_revision:snapshot.session_revision,source_sha256:snapshot.source_sha256,base_graph_sha256:snapshot.base_graph_sha256,selection_samples:snapshot.selection_samples,hypotheses:['Measured bounded gain.'],evidence_refs:first.measurements,parameter_patch:[{stage_id:'output',parameter_id:'outputDb',unit:'dB',value:3}],expected_tradeoffs:['Less headroom.'],limitations:['Fault injection only.'],requires_user_acceptance:true}};
- return Response.json({content:[{type:'text',text:JSON.stringify({action})}],finishReason:{unified:'stop',raw:'stop'},usage:{inputTokens:{total:100,noCache:100,cacheRead:0,cacheWrite:0},outputTokens:{total:50,text:50,reasoning:0}},providerMetadata:{gateway:{generationId:'gen_controlled_'+calls}},response:{modelId:policy.verified_model,id:'controlled_response_'+calls},warnings:[]});
+ const {kind,...rest}=action as any;
+ // propose_change names the rendered preview, read from the tool result the provider received.
+ const rendered=body.prompt.filter((m:any)=>m.role==='tool').flatMap((m:any)=>m.content).map((p:any)=>p.output?.value?.preview?.preview_id).find(Boolean);
+ const actionInput=kind==='propose_change'?{preview_id:rendered,proposal:(({parameter_patch,...p})=>p)(rest.proposal)}:rest;
+ return Response.json({content:[{type:'tool-call',toolCallId:'call_controlled_'+calls,toolName:kind,input:JSON.stringify(actionInput)}],finishReason:{unified:'tool-calls',raw:'tool_calls'},usage:{inputTokens:{total:100,noCache:100,cacheRead:0,cacheWrite:0},outputTokens:{total:50,text:50,reasoning:0}},providerMetadata:{gateway:{generationId:'gen_controlled_'+calls}},response:{modelId:policy.verified_model,id:'controlled_response_'+calls},warnings:[]});
 };
 const store=new Store(c.state),provider=new GatewayProvider(policy,'controlled-not-a-credential',{fetch:transport});
 const service=new AssistantService(native,store,provider,policy,undefined,undefined,new AdmissionGuard(defaultAdmissions));

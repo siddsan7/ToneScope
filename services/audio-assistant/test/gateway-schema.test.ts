@@ -26,7 +26,8 @@ const mixed:Parameter[]=[
 const snapshotOf=(parameters:Parameter[]):Snapshot=>({session_id:'session_1',session_revision:1,source_sha256:'a'.repeat(64),base_graph_sha256:'b'.repeat(64),source_handle:'opaque',selection_samples:[0,48000],sample_rate:48000,parameters});
 const adapterFor=(parameters:Parameter[]):NativeAdapter=>({async snapshot(){return snapshotOf(parameters);},async measurements(){return [{measurement_id:'rms_dbfs',value:-24,unit:'dBFS'}];},
  async render(){return {preview_id:'preview_1',audio_sha256:'c'.repeat(64),session_revision:1,measurements:[{measurement_id:'preview_rms_dbfs',value:-18,unit:'dBFS'}]};},async compare(){return [{measurement_id:'rms_delta_db',value:6,unit:'dB'}];}});
-const generated=(action:unknown,inputTokens=100)=>({content:[{type:'text' as const,text:JSON.stringify({action})}],finishReason:{unified:'stop' as const,raw:'stop'},
+const toolCall=(action:any)=>[{type:'tool-call' as const,toolCallId:'call_mock',toolName:action.kind,input:JSON.stringify(action.kind==='propose_change'?{preview_id:action.preview_id??'preview_1',proposal:(({parameter_patch,...rest})=>rest)(action.proposal)}:(({kind,...rest})=>rest)(action))}];
+const generated=(action:unknown,inputTokens=100)=>({content:toolCall(action),finishReason:{unified:'tool-calls' as const,raw:'tool_calls'},
  usage:{inputTokens:{total:inputTokens,noCache:inputTokens,cacheRead:0,cacheWrite:0},outputTokens:{total:50,text:50,reasoning:0}},providerMetadata:{gateway:{generationId:'gen_mock'}},response:{modelId:MODEL},warnings:[]});
 
 type Json={[key:string]:unknown};
@@ -63,7 +64,7 @@ function admittedTriples(schema:Json){
   return p.stage_id.enum.flatMap(s=>p.parameter_id.enum.flatMap(id=>p.unit.enum.map(u=>`${s}/${id}/${u}`)));}).sort();
 }
 
-test('Gateway request body carries strict structured output and a per-request schema of adjustable controls only',async()=>{
+test('Gateway request body carries strict tools, one required call, and adjustable controls only',async()=>{
  const fixture=endpointFixture(MODEL,SLUG);
  const policy={...livePolicy(),verified_model:MODEL,provider_slug:SLUG,metadata_sha256:endpointMetadataDigest(fixture,MODEL,SLUG)};
  const bodies:Json[]=[];
@@ -80,32 +81,36 @@ test('Gateway request body carries strict structured output and a per-request sc
   assert.equal(result.status,'noop',JSON.stringify(result));
   assert.equal(bodies.length,1);
   const body=bodies[0];
-  // The Gateway client forwards the call options unchanged; strictness is decided by the routed OpenAI/Azure
-  // adapter, which reads it from providerOptions.openai.strictJsonSchema.
-  assert.deepEqual((body.providerOptions as Json).openai,{strictJsonSchema:true});
+  // The Gateway client forwards the call options unchanged: each tool carries its own strict flag.
+  assert.deepEqual((body.providerOptions as Json).openai,{parallelToolCalls:false});
   assert.deepEqual(((body.providerOptions as Json).gateway as Json).only,[SLUG]);
-  const format=body.responseFormat as Json;
-  assert.deepEqual(Object.keys(format).sort(),['schema','type']);
-  assert.equal(format.type,'json');
-  const schema=format.schema as Json;
-  assertStrictCompatible(schema);
-  assert.deepEqual(admittedTriples(schema),['compressor/thresholdDb/dB']);
-  const branches=((schema.properties as Json).action as {anyOf:Array<{properties:Json}>}).anyOf;
-  assert.deepEqual(branches.map(b=>Object.keys(b.properties)[0]),['kind','kind','kind','kind']);
-  assert.deepEqual((branches[0].properties.parameter_patch as Json).items,{$ref:'#/$defs/patch_entry'});
-  assert.deepEqual((((branches[2].properties.proposal as Json).properties as Json).parameter_patch as Json).items,{$ref:'#/$defs/patch_entry'});
-  for(const locked of ['makeupDb','"ratio"','"drive"','boolean'])assert.ok(!JSON.stringify(schema.$defs).includes(locked),locked);
+  assert.deepEqual(((body.providerOptions as Json).gateway as Json).has,['tool-use']);
+  assert.notEqual((body.responseFormat as Json|undefined)?.type,'json');
+  assert.deepEqual(body.toolChoice,{type:'required'});
+  const tools=body.tools as Array<{type:string;name:string;strict:boolean;inputSchema:Json}>;
+  assert.deepEqual(tools.map(t=>t.name),['render_candidate','compare_candidate','propose_change','noop','abstain']);
+  for(const t of tools){assert.equal(t.type,'function');assert.equal(t.strict,true,t.name);assertStrictCompatible(t.inputSchema);}
+  const byName=Object.fromEntries(tools.map(t=>[t.name,t.inputSchema]));
+  assert.deepEqual(admittedTriples(byName.render_candidate),['compressor/thresholdDb/dB']);
+  assert.deepEqual(((byName.render_candidate.properties as Json).parameter_patch as Json).items,{$ref:'#/$defs/patch_entry'});
+  // propose_change names the rendered preview; its patch is copied from that preview, so no patch schema is sent twice.
+  assert.deepEqual(Object.keys(byName.propose_change.properties as Json),['preview_id','proposal']);
+  assert.ok(!JSON.stringify(byName.propose_change).includes('parameter_patch'));
+  assert.equal(byName.propose_change.$defs,undefined);
+  for(const locked of ['makeupDb','"ratio"','"drive"','boolean'])assert.ok(!JSON.stringify(byName.render_candidate.$defs).includes(locked),locked);
  }finally{await rm(directory,{recursive:true,force:true});}
 });
 
-test('input reservation counts exactly the per-request schema text that is sent',async()=>{
+test('input reservation counts exactly the per-request tool definitions that are sent',async()=>{
  for(const [extra,expected] of [[0,'noop'],[1,'provider_usage_exceeded_reservation']] as const){
   const policy={...livePolicy(),verified_model:MODEL,provider_slug:SLUG};
   const model=new MockLanguageModelV4({modelId:MODEL,doGenerate:async options=>{
    const system=options.prompt.find(m=>m.role==='system');const user=options.prompt.find(m=>m.role==='user');
    assert.ok(system&&typeof system.content==='string'&&user&&Array.isArray(user.content)&&user.content[0].type==='text');
-   assert.ok(options.responseFormat?.type==='json'&&options.responseFormat.schema);
-   const bound=Buffer.byteLength(system.content+JSON.stringify(options.responseFormat.schema))+Buffer.byteLength(JSON.stringify([{role:'user',content:user.content[0].text}]))+512;
+   const tools=(options.tools??[]) as Array<{name:string;inputSchema:unknown}>;
+   assert.equal(tools.length,5);
+   const toolText=JSON.stringify(Object.fromEntries(tools.map(t=>[t.name,t.inputSchema])));
+   const bound=Buffer.byteLength(system.content+toolText)+Buffer.byteLength(JSON.stringify([{role:'user',content:user.content[0].text}]))+512;
    return generated({kind:'noop',reason:'done'},bound+extra);
   }});
   const directory=await mkdtemp(join(process.cwd(),'.test-runtime-gateway-bound-'));
@@ -128,16 +133,17 @@ test('with no adjustable control only noop or abstain is offered, and a patch is
  assert.ok(!JSON.stringify(schema).includes('parameter_patch'));
  // The Zod action contract and service patch validation are unchanged safety nets.
  const policy={...livePolicy(),verified_model:MODEL,provider_slug:SLUG};
- for(const [parameters,patch] of [
-  [locked,{stage_id:'compressor',parameter_id:'makeupDb',unit:'dB',value:3}],
-  [mixed,{stage_id:'compressor',parameter_id:'thresholdDb',unit:'dB',value:12}],
-  [mixed,{stage_id:'compressor',parameter_id:'thresholdDb',unit:'ratio',value:-6}],
+ for(const [parameters,patch,reason] of [
+  // With no adjustable control there is no render tool, so the call is rejected as an unknown tool.
+  [locked,{stage_id:'compressor',parameter_id:'makeupDb',unit:'dB',value:3},'provider_output_schema_invalid_accounting_reserved'],
+  [mixed,{stage_id:'compressor',parameter_id:'thresholdDb',unit:'dB',value:12},'unauthorized_parameter'],
+  [mixed,{stage_id:'compressor',parameter_id:'thresholdDb',unit:'ratio',value:-6},'unauthorized_parameter'],
  ] as const){
   const model=new MockLanguageModelV4({modelId:MODEL,doGenerate:generated({kind:'render_candidate',parameter_patch:[patch]})});
   const directory=await mkdtemp(join(process.cwd(),'.test-runtime-gateway-locked-'));
   try{
    const result=await new AssistantService(adapterFor([...parameters]),new StateStore(directory),new GatewayProvider(policy,'mock',{model,async verifyMetadata(){}}),policy,undefined,undefined,new AdmissionGuard(defaultAdmissions)).run(req);
-   assert.equal(result.status,'failed');assert.equal(result.reason,'unauthorized_parameter');assert.equal(model.doGenerateCalls.length,1);
+   assert.equal(result.status,'failed');assert.equal(result.reason,reason);assert.equal(model.doGenerateCalls.length,1);
   }finally{await rm(directory,{recursive:true,force:true});}
  }
 });
@@ -159,4 +165,25 @@ test('exact control triples are grouped by stage and unit, and fall back to per-
  const entry=(large.$defs as {patch_entry:Json}).patch_entry;
  assert.equal(entry.anyOf,undefined);
  assert.deepEqual(((entry.properties as Json).stage_id as Json).enum,many.map(c=>c.stage_id));
+});
+
+test('propose_change takes the named preview patch, and an unrendered preview is still rejected',async()=>{
+ const patch={stage_id:'compressor',parameter_id:'thresholdDb',unit:'dB' as const,value:-24};
+ const proposal={schema_version:1,request_id:'gateway_1',session_revision:1,source_sha256:'a'.repeat(64),base_graph_sha256:'b'.repeat(64),selection_samples:[0,48000],
+  hypotheses:['A lower threshold reduces the louder passage.'],evidence_refs:[{measurement_id:'rms_dbfs',value:-24,unit:'dBFS'}],
+  expected_tradeoffs:['Less dynamic range.'],limitations:['Measured RMS only.'],requires_user_acceptance:true};
+ const policy={...livePolicy(),verified_model:MODEL,provider_slug:SLUG};
+ for(const [preview_id,expected] of [['preview_1','ready'],['preview_9','evaluated_preview_required']] as const){
+  const model=new MockLanguageModelV4({modelId:MODEL,doGenerate:[generated({kind:'render_candidate',parameter_patch:[patch]}),
+   generated({kind:'propose_change',preview_id,proposal:{...proposal,parameter_patch:[{...patch,value:-40}]}})]});
+  const directory=await mkdtemp(join(process.cwd(),'.test-runtime-gateway-propose-'));
+  try{
+   const result=await new AssistantService(adapterFor(mixed),new StateStore(directory),new GatewayProvider(policy,'mock',{model,async verifyMetadata(){}}),policy,undefined,undefined,new AdmissionGuard(defaultAdmissions)).run(req);
+   assert.equal(result.status==='ready'?'ready':result.reason,expected,JSON.stringify(result));
+   assert.equal(model.doGenerateCalls.length,2);
+   // The mock's own patch value is never sent; the proposal carries exactly the rendered patch.
+   if(expected==='ready')assert.deepEqual(result.proposal?.parameter_patch,[patch]);
+   else assert.equal(result.authorization?.accounting_known,true);
+  }finally{await rm(directory,{recursive:true,force:true});}
+ }
 });
